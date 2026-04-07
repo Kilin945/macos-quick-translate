@@ -124,6 +124,8 @@ if not result:
     sys.exit(1)
 
 result = normalize_text(result)
+result = re.sub(r'(?<=\S)\s*((?:[2-9]|[1-9]\d+)\.)(?!\d)', r'\n\1', result)
+result = result.lstrip('\n')
 
 if word_count <= 1:
     show_notification(result)
