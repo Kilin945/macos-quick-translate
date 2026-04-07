@@ -127,7 +127,7 @@ result = normalize_text(result)
 result = re.sub(r'(?<=\S)\s*((?:[2-9]|[1-9]\d+)\.)(?!\d)', r'\n\1', result)
 result = result.lstrip('\n')
 
-if word_count <= 1:
+if word_count <= 3:
     show_notification(result)
 else:
     show_dialog(result)
