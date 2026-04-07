@@ -112,6 +112,7 @@ if not text:
     sys.exit(0)
 
 word_count = len(text.split())
+text = text.replace('_', ' ').replace('-', ' ')
 
 try:
     result = translate(text)
