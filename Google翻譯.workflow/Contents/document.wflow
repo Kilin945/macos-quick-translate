@@ -195,8 +195,6 @@ if word_count &lt;= 3:
     show_notification(result)
 else:
     show_dialog(result)
-# test
-
 PYEOF
 </string>
 					<key>CheckedForUserDefaultShell</key>
