@@ -132,3 +132,4 @@ if word_count <= 3:
     show_notification(result)
 else:
     show_dialog(result)
+# test
