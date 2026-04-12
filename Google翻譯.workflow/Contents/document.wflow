@@ -86,7 +86,14 @@ def normalize_text(text):
     cleaned = []
     for p in paragraphs:
         lines = [l.strip() for l in p.split('\n') if l.strip()]
-        if lines:
+        if not lines:
+            continue
+        # bullet list paragraphs must keep their line breaks so the API receives
+        # "- item" on its own line; collapsing them into one line causes the API
+        # to strip the "- " markers, losing all list structure after translation
+        if any(l.startswith('- ') for l in lines):
+            cleaned.append('\n'.join(lines))
+        else:
             cleaned.append(' '.join(lines))
     return '\n\n'.join(cleaned)
 
