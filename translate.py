@@ -128,6 +128,10 @@ if not result:
 
 result = normalize_text(result)
 result = re.sub(r'(?<=\S)\s*((?:[2-9]|[1-9]\d+)\.)(?!\d)', r'\n\1', result)
+# bullet list fallback: if API still produces inline "- item" or "）- item" separators,
+# restore the newline (primary fix is in normalize_text, this catches edge cases)
+result = re.sub(r'(?<=[^\n]) - (?=[^\s-])', '\n- ', result)
+result = re.sub(r'(?<=[）】\)\]])\s*-\s+(?=[^\s-])', '\n- ', result)
 result = result.lstrip('\n')
 
 if word_count <= 3:
