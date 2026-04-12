@@ -1,4 +1,4 @@
-import sys, json, os, re, urllib.request, urllib.parse, subprocess
+import sys, json, os, re, urllib.request, urllib.parse, subprocess, time
 
 def detect_source_lang(text):
     latin = len(re.findall(r'[a-zA-Z]', text))
@@ -12,11 +12,20 @@ def translate(text):
     sl = detect_source_lang(text)
     url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={sl}&tl=zh-TW&dt=t"
     data = urllib.parse.urlencode({'q': text}).encode('utf-8')
-    req = urllib.request.Request(url, data=data, method='POST')
-    req.add_header('Content-Type', 'application/x-www-form-urlencoded')
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        result_data = json.loads(resp.read().decode('utf-8'))
-    return ''.join([item[0] for item in result_data[0] if item[0]])
+    last_err = None
+    # retry once on transient network failure; sleep 1s to avoid immediate rate-limit
+    for attempt in range(2):
+        try:
+            req = urllib.request.Request(url, data=data, method='POST')
+            req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result_data = json.loads(resp.read().decode('utf-8'))
+            return ''.join([item[0] for item in result_data[0] if item[0]])
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                time.sleep(1)
+    raise last_err
 
 def normalize_text(text):
     paragraphs = re.split(r'\n{2,}', text)
