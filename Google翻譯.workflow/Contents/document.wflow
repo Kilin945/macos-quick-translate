@@ -166,7 +166,10 @@ def split_into_pages(text, max_chars):
 def _run_dialog_page(chunk, title, buttons, default_button):
     btn_str = ', '.join(f'"{b}"' for b in buttons)
     script = f'on run argv\ndisplay dialog (item 1 of argv) with title (item 2 of argv) buttons {{{btn_str}}} default button "{default_button}"\nend run'
-    return subprocess.run(['osascript', '-e', script, '--', chunk, title], capture_output=True, text=True)
+    r = subprocess.run(['osascript', '-e', script, '--', chunk, title], capture_output=True, text=True)
+    if r.returncode != 0 and r.stderr:
+        log(f'osascript dialog error: {r.stderr.strip()}')
+    return r
 
 def show_dialog(text):
     chunks = split_into_pages(text, CHARS_PER_PAGE)
@@ -175,22 +178,29 @@ def show_dialog(text):
     while 0 &lt;= i &lt; total:
         chunk = chunks[i]
         title = f"Google Translate ({i+1}/{total})" if total &gt; 1 else "Google Translate"
+        # compute buttons based on position; single error check handles all branches
         if total == 1:
-            _run_dialog_page(chunk, title, ['Close'], 'Close')
-            break
+            buttons, default = ['Close'], 'Close'
         elif i == 0:
-            r = _run_dialog_page(chunk, title, ['Close', 'Next'], 'Next')
-            if 'Next' in r.stdout: i += 1
-            else: break
+            buttons, default = ['Close', 'Next'], 'Next'
         elif i == total - 1:
-            r = _run_dialog_page(chunk, title, ['Previous', 'Close'], 'Close')
-            if 'Previous' in r.stdout: i -= 1
-            else: break
+            buttons, default = ['Previous', 'Close'], 'Close'
         else:
-            r = _run_dialog_page(chunk, title, ['Previous', 'Close', 'Next'], 'Next')
-            if 'Next' in r.stdout: i += 1
-            elif 'Previous' in r.stdout: i -= 1
-            else: break
+            buttons, default = ['Previous', 'Close', 'Next'], 'Next'
+        r = _run_dialog_page(chunk, title, buttons, default)
+        if r.returncode != 0:
+            # dialog failed (e.g. no UI access in Terminal); fall back to notification
+            log('dialog failed, falling back to notification')
+            show_notification(text)
+            return
+        # osascript returns "button returned:Next" — parse the last segment exactly
+        clicked = r.stdout.strip().split(':')[-1].strip()
+        if clicked == 'Next':
+            i += 1
+        elif clicked == 'Previous':
+            i -= 1
+        else:
+            break
 
 text = os.environ.get('TRANSLATE_INPUT', '').strip()
 if not text:
