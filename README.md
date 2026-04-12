@@ -10,10 +10,12 @@
 
 - **Works anywhere** — any app that supports text selection
 - **Auto language detection** — handles English, Chinese, and mixed content correctly
-- **Variable name translation** — `snake_case` and `kebab-case` are split into words before translating (`_` and `-` treated as spaces)
+- **Variable name translation** — `snake_case` and `kebab-case` (word-word dashes only) are split into words before translating; standalone `- item` bullet markers are preserved
+- **Bullet list formatting** — bullet list structure is preserved through translation so `- item` lines stay on separate lines
+- **Numbered list formatting** — numbered list items in translated output are automatically placed on new lines
 - **Paginated results** — long translations split into pages with Previous / Next navigation
 - **Smart page splitting** — breaks at paragraphs, sentences, or spaces — never mid-word
-- **Numbered list formatting** — numbered list items in translated output are automatically placed on new lines
+- **Stable** — retries once on transient API failure; falls back to notification if dialog is unavailable
 - **3 words or fewer** → macOS notification; **More than 3 words** → dialog with pagination
 
 ### Installation
@@ -72,20 +74,38 @@ python3 scripts/build_workflow.py
 ```
 Selected text
     ↓
-normalize input   — replaces _ and - with spaces
+normalize input   — replaces _ with spaces; replaces word-word dashes (kebab-case)
+                    with spaces; bullet "- item" markers are preserved
+    ↓
+normalize_text()      — collapses multi-line paragraphs into one line,
+                        but keeps bullet list items on separate lines so the
+                        API receives proper list structure
     ↓
 detect_source_lang()  — counts Latin vs Chinese chars → picks sl=en or sl=auto
     ↓
 translate()           — POST to Google Translate unofficial API (no API key needed)
+                        retries once on transient failure
     ↓
 normalize_text()      — merges mid-sentence line breaks from API response
     ↓
-numbered list fix     — inserts newlines before list item numbers
+numbered list fix     — inserts newlines before list item numbers (2. 3. …)
+bullet list fix       — restores inline "- item" separators to newlines (fallback)
     ↓
 split_into_pages()    — splits at paragraph → line → sentence → space → hard cut
     ↓
 show_notification() / show_dialog()   — ≤3 input words → notification, else → dialog
+                                        falls back to notification if dialog unavailable
 ```
+
+### Debugging
+
+Translation events are logged to `/tmp/translate_debug.log`:
+
+```bash
+tail -f /tmp/translate_debug.log
+```
+
+Each run logs the input, result, and any errors.
 
 ### Requirements
 
@@ -106,10 +126,12 @@ show_notification() / show_dialog()   — ≤3 input words → notification, els
 
 - **任何 App 都能用** — 只要能選取文字，按 ⌘/ 就能翻譯
 - **自動偵測語言** — 英文、中文、中英混合都能正確翻譯
-- **變數名稱翻譯** — `snake_case` 和 `kebab-case` 自動拆字翻譯（`_` 和 `-` 視為空白）
+- **變數名稱翻譯** — `snake_case` 和 `kebab-case`（只替換字母之間的 `-`）自動拆字翻譯；bullet `- item` 的 `-` 不受影響
+- **Bullet list 格式保留** — 翻譯後 `- item` 清單結構保持換行，不會被合併成一行
+- **編號清單換行** — 翻譯結果中的編號清單自動換行
 - **分頁顯示** — 長文翻譯結果自動分頁，支援上一頁 / 下一頁瀏覽
 - **智慧斷頁** — 優先在段落、句子結尾斷頁，不會切斷句子
-- **智慧斷行** — 翻譯結果中的編號清單自動換行
+- **穩定性** — API 失敗自動重試一次；對話框無法顯示時 fallback 為通知泡泡
 - **3 個字以內** → macOS 通知泡泡；**超過 3 個字** → 對話框
 
 ### 安裝方式
@@ -168,20 +190,37 @@ python3 scripts/build_workflow.py
 ```
 選取文字
     ↓
-正規化輸入   — 將 _ 和 - 替換為空白
+正規化輸入   — 將 _ 替換為空白；只替換字母之間的 kebab-case `-`
+              bullet "- item" 的 `-` 保留不動
+    ↓
+normalize_text()      — 多行段落合併成一行，但 bullet list 段落
+                        保留換行，讓 API 看到完整的清單結構
     ↓
 detect_source_lang()  — 統計英文 / 中文字元比例 → 決定 sl=en 或 sl=auto
     ↓
 translate()           — POST 到 Google Translate 非官方 API（不需要 API key）
+                        失敗自動重試一次
     ↓
 normalize_text()      — 合併 API 回傳結果中的句中換行
     ↓
-編號清單修正  — 在清單項目編號前自動插入換行
+編號清單修正  — 在清單項目編號（2. 3. …）前自動插入換行
+Bullet 修正   — 翻譯結果中仍有 inline "- item" 時補插換行（fallback）
     ↓
 split_into_pages()    — 依段落 → 句子 → 空白 → 強制截斷的順序分頁
     ↓
 show_notification() / show_dialog()   — 輸入 ≤3 個字 → 通知泡泡，否則 → 對話框
+                                        對話框失敗時 fallback 為通知泡泡
 ```
+
+### 除錯
+
+翻譯事件會記錄到 `/tmp/translate_debug.log`：
+
+```bash
+tail -f /tmp/translate_debug.log
+```
+
+每次觸發都會記錄輸入內容、翻譯結果、以及所有錯誤訊息。
 
 ### 系統需求
 
