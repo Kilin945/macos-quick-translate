@@ -1,4 +1,16 @@
-import sys, json, os, re, urllib.request, urllib.parse, subprocess, time
+import sys, json, os, re, urllib.request, urllib.parse, subprocess, time, traceback, logging
+
+# use logging module so the file stays open across calls, avoiding per-call open/close overhead
+logging.basicConfig(
+    filename='/tmp/translate_debug.log',
+    level=logging.DEBUG,
+    format='[%(asctime)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+log = logging.info
+
+def _preview(s, n=80):
+    return s[:n] + '...' if len(s) > n else s
 
 def detect_source_lang(text):
     latin = len(re.findall(r'[a-zA-Z]', text))
@@ -23,6 +35,7 @@ def translate(text):
             return ''.join([item[0] for item in result_data[0] if item[0]])
         except Exception as e:
             last_err = e
+            log(f'translate attempt {attempt+1} failed: {e}')
             if attempt == 0:
                 time.sleep(1)
     raise last_err
@@ -45,7 +58,8 @@ def normalize_text(text):
 
 def show_notification(text):
     script = 'on run argv\ndisplay notification (item 1 of argv) with title "Google Translate"\nend run'
-    subprocess.run(['osascript', '-e', script, '--', text])
+    # truncate here so every caller is safe; macOS notification has a character limit
+    subprocess.run(['osascript', '-e', script, '--', text[:200]])
 
 CHARS_PER_PAGE = 1000
 
@@ -117,9 +131,12 @@ def show_dialog(text):
 
 text = os.environ.get('TRANSLATE_INPUT', '').strip()
 if not text:
+    log('INPUT empty, exit')
     sys.exit(0)
 
 word_count = len(text.split())
+log(f'INPUT ({word_count}w): {_preview(text)}')
+
 # replace underscores and kebab-case dashes (word-word only) for identifier translation;
 # bullet "  - item" dashes are preserved because no word char precedes them
 text = text.replace('_', ' ')
@@ -128,10 +145,12 @@ text = re.sub(r'(?<=\w)-(?=\w)', ' ', text)
 try:
     result = translate(text)
 except Exception as e:
+    log(f'translate ERROR: {traceback.format_exc()}')
     show_dialog(f"Translation failed: {str(e)[:100]}")
     sys.exit(1)
 
 if not result:
+    log('translate returned empty')
     show_dialog("Translation failed (empty result)")
     sys.exit(1)
 
@@ -142,6 +161,8 @@ result = re.sub(r'(?<=\S)\s*((?:[2-9]|[1-9]\d+)\.)(?!\d)', r'\n\1', result)
 result = re.sub(r'(?<=[^\n]) - (?=[^\s-])', '\n- ', result)
 result = re.sub(r'(?<=[）】\)\]])\s*-\s+(?=[^\s-])', '\n- ', result)
 result = result.lstrip('\n')
+
+log(f'RESULT: {_preview(result)}')
 
 if word_count <= 3:
     show_notification(result)
