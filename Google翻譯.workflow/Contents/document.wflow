@@ -167,7 +167,10 @@ if not text:
     sys.exit(0)
 
 word_count = len(text.split())
-text = text.replace('_', ' ').replace('-', ' ')
+# replace underscores and kebab-case dashes (word-word only) for identifier translation;
+# bullet "  - item" dashes are preserved because no word char precedes them
+text = text.replace('_', ' ')
+text = re.sub(r'(?&lt;=\w)-(?=\w)', ' ', text)
 
 try:
     result = translate(text)
