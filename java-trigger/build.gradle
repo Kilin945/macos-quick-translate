@@ -7,8 +7,15 @@ repositories {
 }
 
 dependencies {
-    // global keyboard hook (the only external dependency)
-    implementation 'com.github.kwhat:jnativehook:2.2.2'
+    // registers a real system-level global hotkey (macOS Carbon via JNA), so the
+    // keystroke is CONSUMED by the OS and never leaks to the focused app — no alert beep.
+    // (JNativeHook can only listen, not consume, on macOS, which caused the beep.)
+    implementation 'com.github.tulskiy:jkeymaster:1.3'
+
+    // jkeymaster 1.3 bundles an old JNA whose native lib lacks arm64 (Apple Silicon).
+    // Force a modern JNA that ships an arm64 dispatch library.
+    implementation 'net.java.dev.jna:jna:5.14.0'
+    implementation 'net.java.dev.jna:jna-platform:5.14.0'
 }
 
 java {

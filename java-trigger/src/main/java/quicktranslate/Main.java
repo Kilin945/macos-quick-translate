@@ -1,18 +1,16 @@
 package quicktranslate;
 
-import com.github.kwhat.jnativehook.GlobalScreen;
-import com.github.kwhat.jnativehook.NativeHookException;
+import com.tulskiy.keymaster.common.Provider;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class Main {
 
-    public static void main(String[] args) {
-        // JNativeHook logs every key at INFO by default — silence it
-        Logger logger = Logger.getLogger(GlobalScreen.class.getPackage().getName());
-        logger.setLevel(Level.WARNING);
-        logger.setUseParentHandlers(false);
+    public static void main(String[] args) throws InterruptedException {
+        // quiet jkeymaster's internal logging
+        Logger.getLogger("com.tulskiy.keymaster").setLevel(Level.WARNING);
 
         Config config;
         try {
@@ -26,25 +24,21 @@ public class Main {
         System.out.println("[QuickTranslate] python = " + config.python);
         System.out.println("[QuickTranslate] script = " + config.script);
 
-        try {
-            GlobalScreen.registerNativeHook();
-        } catch (NativeHookException e) {
-            System.err.println("[QuickTranslate] failed to register global hook: " + e.getMessage());
-            System.err.println("On macOS: System Settings > Privacy & Security > Accessibility "
-                    + "-> enable this app (or your terminal/IDE when running via gradle).");
-            return;
-        }
-
-        GlobalScreen.addNativeKeyListener(new HotkeyListener(config));
+        // register the hotkey AT THE OS LEVEL (macOS Carbon): the keystroke is consumed by
+        // the system and never reaches the focused app, so there is no "unhandled shortcut" beep
+        Provider provider = Provider.getCurrentProvider(false);
+        TranslateRunner runner = new TranslateRunner(config);
+        provider.register(config.keyStroke, hotKey -> runner.trigger());
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                GlobalScreen.unregisterNativeHook();
-            } catch (NativeHookException ignored) {
-            }
+            provider.reset();
+            provider.stop();
         }));
 
         System.out.println("[QuickTranslate] running — select text anywhere and press "
-                + config.hotkeyDisplay() + ". Ctrl+C to quit.");
+                + config.hotkeyDisplay() + ".");
+
+        // keep the JVM alive; the Carbon provider runs on its own thread
+        new CountDownLatch(1).await();
     }
 }

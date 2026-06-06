@@ -1,12 +1,13 @@
 package quicktranslate;
 
-import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
-
+import javax.swing.KeyStroke;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -20,9 +21,8 @@ public class Config {
     public int copyDelayMs;
     public boolean restoreClipboard;
 
-    // parsed hotkey
-    public int keyCode;
-    public boolean cmd, shift, ctrl, alt;
+    // parsed hotkey, as a javax.swing.KeyStroke for jkeymaster to register with the OS
+    public KeyStroke keyStroke;
     public String hotkeyRaw;
 
     static final String CONF = System.getProperty("user.home") + "/.quicktranslate.conf";
@@ -71,51 +71,49 @@ public class Config {
 
     private void parseHotkey(String s) {
         hotkeyRaw = s;
-        cmd = shift = ctrl = alt = false;
+        List<String> mods = new ArrayList<>();
         String keyPart = null;
         for (String raw : s.split("\\+")) {
             String t = raw.trim().toLowerCase();
             switch (t) {
-                case "cmd", "command", "meta" -> cmd = true;
-                case "shift" -> shift = true;
-                case "ctrl", "control" -> ctrl = true;
-                case "alt", "option", "opt" -> alt = true;
+                case "cmd", "command", "meta" -> mods.add("meta");
+                case "shift" -> mods.add("shift");
+                case "ctrl", "control" -> mods.add("control");
+                case "alt", "option", "opt" -> mods.add("alt");
                 default -> keyPart = raw.trim();
             }
         }
         if (keyPart == null || keyPart.isEmpty()) {
             throw new IllegalArgumentException("hotkey has no main key: " + s);
         }
-        keyCode = parseKey(keyPart);
+        // build a javax.swing.KeyStroke spec, e.g. "meta QUOTE" or "control alt T"
+        String spec = (mods.isEmpty() ? "" : String.join(" ", mods) + " ") + keyName(keyPart);
+        keyStroke = KeyStroke.getKeyStroke(spec);
+        if (keyStroke == null) {
+            throw new IllegalArgumentException("could not parse hotkey '" + s + "' (spec: " + spec + ")");
+        }
     }
 
-    /** Map a single key string to a JNativeHook VC_* code via reflection on the field name. */
-    private static int parseKey(String k) {
-        String field;
+    /** Map a key string to an AWT VK_* name (without the VK_ prefix), as KeyStroke expects. */
+    private static String keyName(String k) {
         if (k.length() == 1) {
             char c = Character.toUpperCase(k.charAt(0));
-            field = switch (c) {
-                case '\'' -> "VC_QUOTE";
-                case ';' -> "VC_SEMICOLON";
-                case ',' -> "VC_COMMA";
-                case '.' -> "VC_PERIOD";
-                case '/' -> "VC_SLASH";
-                case '\\' -> "VC_BACK_SLASH";
-                case '[' -> "VC_OPEN_BRACKET";
-                case ']' -> "VC_CLOSE_BRACKET";
-                case '-' -> "VC_MINUS";
-                case '=' -> "VC_EQUALS";
-                case '`' -> "VC_BACKQUOTE";
-                default -> "VC_" + c; // letters A-Z and digits 0-9
+            return switch (c) {
+                case '\'' -> "QUOTE";
+                case ';' -> "SEMICOLON";
+                case ',' -> "COMMA";
+                case '.' -> "PERIOD";
+                case '/' -> "SLASH";
+                case '\\' -> "BACK_SLASH";
+                case '[' -> "OPEN_BRACKET";
+                case ']' -> "CLOSE_BRACKET";
+                case '-' -> "MINUS";
+                case '=' -> "EQUALS";
+                case '`' -> "BACK_QUOTE";
+                default -> String.valueOf(c); // letters A-Z and digits 0-9
             };
-        } else {
-            field = "VC_" + k.toUpperCase(); // SPACE, ENTER, TAB, F1..F12, etc.
         }
-        try {
-            return NativeKeyEvent.class.getField(field).getInt(null);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalArgumentException("unknown hotkey key: '" + k + "' (resolved to " + field + ")");
-        }
+        return k.toUpperCase(); // SPACE, ENTER, TAB, F1..F12, etc.
     }
 
     private static int parseInt(String s, int fallback) {
