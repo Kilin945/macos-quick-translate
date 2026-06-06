@@ -56,7 +56,7 @@ ditto build/jpackage/QuickTranslate.app /Applications/QuickTranslate.app
 open /Applications/QuickTranslate.app
 ```
 
-**Grant Accessibility:** System Settings → Privacy & Security → Accessibility → enable `QuickTranslate.app` (needed so it can observe the hotkey and send ⌘C). Re-grant after each rebuild — the signature changes.
+**Grant Accessibility:** System Settings → Privacy & Security → Accessibility → enable `QuickTranslate.app` (needed so it can send ⌘C to copy the selection; the global hotkey itself is registered via macOS Carbon and needs no permission). Re-grant after each rebuild — the signature changes.
 
 **Auto-start at login:** add `QuickTranslate.app` to System Settings → General → Login Items.
 
@@ -206,7 +206,7 @@ ditto build/jpackage/QuickTranslate.app /Applications/QuickTranslate.app
 open /Applications/QuickTranslate.app
 ```
 
-**授權輔助使用：** 系統設定 → 隱私權與安全性 → 輔助使用 → 開啟 `QuickTranslate.app`（它需要這個權限才能監聽熱鍵、送出 ⌘C）。每次重新打包後簽章會變，要重新授權一次。
+**授權輔助使用：** 系統設定 → 隱私權與安全性 → 輔助使用 → 開啟 `QuickTranslate.app`（送出 ⌘C 複製選取文字需要這個權限；全域熱鍵本身透過 macOS Carbon 註冊，不需要權限）。每次重新打包後簽章會變，要重新授權一次。
 
 **開機自動啟動：** 把 `QuickTranslate.app` 加到 系統設定 → 一般 → 登入項目。
 
