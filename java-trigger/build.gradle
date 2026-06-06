@@ -1,0 +1,27 @@
+plugins {
+    id 'application'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // global keyboard hook (the only external dependency)
+    implementation 'com.github.kwhat:jnativehook:2.2.2'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+application {
+    mainClass = 'quicktranslate.Main'
+}
+
+// run in the foreground so we see logs; java.awt.headless must be false for Robot/clipboard
+run {
+    systemProperty 'java.awt.headless', 'false'
+}

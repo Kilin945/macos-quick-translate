@@ -1,0 +1,7 @@
+.DS_Store
+*.pyc
+__pycache__/
+
+# java-trigger build artifacts
+java-trigger/.gradle/
+java-trigger/build/
