@@ -8,7 +8,9 @@
 
 ### Features
 
-- **Works anywhere** — any app that supports text selection
+- **Two ways to run** — a macOS Service, or a global-hotkey background app (`QuickTranslate.app`)
+- **Customizable shortcut** — defaults to ⌘/; both modes can be rebound to whatever combo you prefer
+- **Wide app coverage** — the Service covers apps that support the Services menu; the global-hotkey app isn't bound to the Services menu and works in any app where ⌘C can copy the selection (selectable, copyable text — not images or copy-blocked fields)
 - **Auto language detection** — handles English, Chinese, and mixed content correctly
 - **Variable name translation** — `snake_case` and `kebab-case` (word-word dashes only) are split into words before translating; standalone `- item` bullet markers are preserved
 - **Bullet list formatting** — bullet list structure is preserved through translation so `- item` lines stay on separate lines
@@ -39,6 +41,37 @@ macOS will ask for permission to run the script. Click **Allow**.
 1. Select any text in any app
 2. Press **⌘/**
 3. Translation appears in a notification or dialog
+
+### Global Hotkey App — works in *every* app (`java-trigger/`)
+
+The macOS Service above only works in apps that hand selected text to the Services menu. Some apps (claude.ai in the browser, Mail, the Claude desktop app) don't, so ⌘/ does nothing there.
+
+`java-trigger/` solves this: a small background app (`QuickTranslate.app`) that listens for a global hotkey, simulates ⌘C to grab the selection (works in **every** app), and feeds the text to the same `translate.py` — unchanged. It shows the same dialog / notification.
+
+**Build & install:**
+```bash
+cd java-trigger
+./build_app.sh                                              # → build/jpackage/QuickTranslate.app
+ditto build/jpackage/QuickTranslate.app /Applications/QuickTranslate.app
+open /Applications/QuickTranslate.app
+```
+
+**Grant Accessibility:** System Settings → Privacy & Security → Accessibility → enable `QuickTranslate.app` (needed so it can observe the hotkey and send ⌘C). Re-grant after each rebuild — the signature changes.
+
+**Auto-start at login:** add `QuickTranslate.app` to System Settings → General → Login Items.
+
+**Disable the old Service binding** to avoid a key conflict: System Settings → Keyboard → Keyboard Shortcuts → Services → uncheck ⌘/ on Google翻譯.
+
+**Configure the hotkey** — edit `~/.quicktranslate.conf` (auto-created on first run), then restart with `pkill -f QuickTranslate.app && open /Applications/QuickTranslate.app`:
+```properties
+hotkey = cmd+'              # also e.g. cmd+shift+t, ctrl+alt+space
+python = /opt/homebrew/bin/python3
+script = /path/to/translate.py
+copy_delay_ms     = 150     # wait after ⌘C before reading the clipboard
+restore_clipboard = true    # put your original clipboard back afterwards
+```
+
+> Relies on ⌘C: a selection that can't be copied (images, copy-blocked fields) can't be translated. If nothing is selected the hotkey does nothing — the clipboard is cleared before ⌘C and re-checked, so stale clipboard content is never mistranslated.
 
 ### Pagination
 
@@ -117,6 +150,7 @@ Each run logs the input, result, and any errors.
 
 - Uses Google Translate's unofficial API — no API key needed, but may have rate limits
 - Button layout is controlled by macOS system dialog — positions and colors cannot be fully customized
+- **Global-hotkey app only translates what ⌘C can copy** — selections that can't be copied (images, copy-blocked fields, scanned PDFs without a text layer) cannot be translated
 
 ---
 
@@ -124,7 +158,9 @@ Each run logs the input, result, and any errors.
 
 ### 功能特色
 
-- **任何 App 都能用** — 只要能選取文字，按 ⌘/ 就能翻譯
+- **兩種執行方式** — macOS 服務，或全域熱鍵背景 App（`QuickTranslate.app`）
+- **快捷鍵可自訂** — 預設 ⌘/，兩種方式都能改成你習慣的組合鍵
+- **適用範圍廣** — 服務支援有「服務選單」的 App；全域熱鍵 App 不受服務選單限制，支援任何「⌘C 複製得到文字」的 App（可選取、可複製的文字；圖片或禁止複製的欄位則不行）
 - **自動偵測語言** — 英文、中文、中英混合都能正確翻譯
 - **變數名稱翻譯** — `snake_case` 和 `kebab-case`（只替換字母之間的 `-`）自動拆字翻譯；bullet `- item` 的 `-` 不受影響
 - **Bullet list 格式保留** — 翻譯後 `- item` 清單結構保持換行，不會被合併成一行
@@ -155,6 +191,37 @@ cp -r "Google翻譯.workflow" ~/Library/Services/
 1. 在任何 App 中選取文字
 2. 按下 **⌘/**
 3. 翻譯結果出現在通知或對話框
+
+### 全域熱鍵 App — 真正在「每個」App 都能用（`java-trigger/`）
+
+上面的 macOS 服務只在「會把選取文字交給服務選單」的 App 生效。有些 App（瀏覽器裡的 claude.ai、Mail、Claude 桌面 App）不交，所以在那邊按 ⌘/ 沒反應。
+
+`java-trigger/` 解決這個問題：一個小的背景 App（`QuickTranslate.app`），監聽全域熱鍵，模擬 ⌘C 把選取文字複製起來（**每個 App 都有效**），再交給同一支 `translate.py`（完全沒改），跳出一樣的對話框 / 通知。
+
+**建置與安裝：**
+```bash
+cd java-trigger
+./build_app.sh                                              # → build/jpackage/QuickTranslate.app
+ditto build/jpackage/QuickTranslate.app /Applications/QuickTranslate.app
+open /Applications/QuickTranslate.app
+```
+
+**授權輔助使用：** 系統設定 → 隱私權與安全性 → 輔助使用 → 開啟 `QuickTranslate.app`（它需要這個權限才能監聽熱鍵、送出 ⌘C）。每次重新打包後簽章會變，要重新授權一次。
+
+**開機自動啟動：** 把 `QuickTranslate.app` 加到 系統設定 → 一般 → 登入項目。
+
+**停用舊的服務綁定** 以免搶鍵：系統設定 → 鍵盤 → 鍵盤快速鍵 → 服務 → 取消「Google翻譯」的 ⌘/。
+
+**設定熱鍵** — 編輯 `~/.quicktranslate.conf`（第一次執行會自動產生），改完用 `pkill -f QuickTranslate.app && open /Applications/QuickTranslate.app` 重啟：
+```properties
+hotkey = cmd+'              # 也可以是 cmd+shift+t、ctrl+alt+space
+python = /opt/homebrew/bin/python3
+script = /path/to/translate.py
+copy_delay_ms     = 150     # 按下 ⌘C 後等多久再讀剪貼簿
+restore_clipboard = true    # 翻完是否還原你原本的剪貼簿
+```
+
+> **限制：完全依賴 ⌘C —— 只有「⌘C 複製得到的東西」才翻得了。** 無法複製的選取（圖片、禁止複製的欄位、沒有文字層的掃描 PDF）就無法翻譯。沒選任何文字時按熱鍵不會有反應 —— 程式會在 ⌘C 前先清空剪貼簿再檢查，所以不會誤翻你剪貼簿裡的舊內容。
 
 ### 分頁按鈕說明
 
@@ -232,3 +299,4 @@ tail -f /tmp/translate_debug.log
 
 - 使用 Google Translate 非官方 API — 不需要 API key，但可能有請求頻率限制
 - 對話框按鈕樣式由 macOS 系統控制，位置與顏色無法自訂
+- **全域熱鍵 App 只能翻「⌘C 複製得到的東西」** — 無法複製的選取（圖片、禁止複製的欄位、沒有文字層的掃描 PDF）就無法翻譯

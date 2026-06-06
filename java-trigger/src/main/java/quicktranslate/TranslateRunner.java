@@ -39,19 +39,25 @@ public class TranslateRunner {
     private void run() {
         try {
             Clipboard cb = Toolkit.getDefaultToolkit().getSystemClipboard();
-            String saved = config.restoreClipboard ? readClipboard(cb) : null;
+            String saved = readClipboard(cb);
 
+            // clear first so leftover clipboard content can't be mistaken for a fresh
+            // selection: if cmd+C copies nothing, the clipboard stays blank -> "no selection"
+            setClipboard(cb, "");
             copySelection();
             Thread.sleep(config.copyDelayMs); // copy is async; let the clipboard settle
 
             String selected = readClipboard(cb);
+            boolean gotSelection = selected != null && !selected.isBlank();
 
-            if (config.restoreClipboard && saved != null) {
-                setClipboard(cb, saved);
+            // restore when the user wants it, OR when nothing was copied (never leave the
+            // clipboard wiped just because the user pressed the hotkey with no selection)
+            if (config.restoreClipboard || !gotSelection) {
+                setClipboard(cb, saved != null ? saved : "");
             }
 
-            if (selected == null || selected.isBlank()) {
-                System.out.println("[QuickTranslate] no text selected");
+            if (!gotSelection) {
+                System.out.println("[QuickTranslate] no text selected (clipboard empty after copy)");
                 return;
             }
             runTranslate(selected);
