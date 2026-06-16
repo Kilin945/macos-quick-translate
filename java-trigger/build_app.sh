@@ -35,4 +35,7 @@ echo "==> Marking as background agent (LSUIElement, no Dock icon)"
 /usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$PLIST" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$PLIST"
 
+echo "==> Compiling copykey helper into the bundle (reliable synthetic Cmd+C)"
+swiftc copykey.swift -O -o "$OUT_DIR/$APP_NAME.app/Contents/MacOS/copykey"
+
 echo "==> Done: $OUT_DIR/$APP_NAME.app"

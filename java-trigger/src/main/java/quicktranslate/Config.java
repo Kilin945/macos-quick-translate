@@ -39,7 +39,10 @@ public class Config {
 
             # advanced (usually leave as-is)
             copy_delay_ms     = 150
-            restore_clipboard = true
+            # false: after translating, the selected word stays on the clipboard (so you can paste
+            # it). true: restore whatever was on the clipboard before translating (but then you
+            # can't paste the just-translated word).
+            restore_clipboard = false
             """;
 
     public static Config load() {
