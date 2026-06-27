@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LaunchAgent template for QuickTranslate (auto-start at login + crash auto-restart).
+
+  To use:
+    1. Replace __PROJECT_DIR__ with the absolute path to this repo
+       (the folder containing translate.py).
+    2. Save it WITHOUT the .sample suffix into ~/Library/LaunchAgents/, e.g.
+         cp scripts/com.quicktranslate.plist.sample ~/Library/LaunchAgents/com.quicktranslate.plist
+       then edit the copied file and substitute __PROJECT_DIR__.
+    3. Load it:
+         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.quicktranslate.plist
+-->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.kilin.quicktranslate</string>
+    <string>com.quicktranslate</string>
 
     <!-- launch the bundled jpackage binary directly (matches its Accessibility grant by path) -->
     <key>ProgramArguments</key>
@@ -24,10 +36,10 @@
     </dict>
 
     <!-- raw stdout/stderr (SLF4J notices, uncaught stack traces); the structured app log lives
-         separately at logs/quicktranslate.log -->
+         separately at <project>/logs/quicktranslate.log -->
     <key>StandardOutPath</key>
-    <string>/Users/yeqilin/Workspace/macos-quick-translate/logs/quicktranslate.out.log</string>
+    <string>__PROJECT_DIR__/logs/quicktranslate.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/yeqilin/Workspace/macos-quick-translate/logs/quicktranslate.out.log</string>
+    <string>__PROJECT_DIR__/logs/quicktranslate.out.log</string>
 </dict>
 </plist>

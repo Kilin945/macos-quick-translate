@@ -71,21 +71,31 @@ public class TranslateRunner {
     private void run() {
         try {
             String front = frontmostApp();
+            boolean terminal = config.isTerminal(front);
             String before = nz(readClipboard());
 
-            // send Cmd+C WITHOUT clearing first (see class doc), then wait for the clipboard to
-            // change. If it changes, a fresh copy landed (normal app). If it doesn't, we fall back
-            // to whatever is already there (copy-on-select terminal, or a manual pre-copy).
-            copySelection();
-            String selected = waitForClipboardChange(before);
-            boolean changed = !selected.equals(before);
+            String selected;
+            boolean changed;
+            if (terminal) {
+                // In a terminal the selection is owned by the app (e.g. Claude Code's copy-on-select
+                // already put it on the clipboard). A synthetic Cmd+C would only hit Terminal's
+                // disabled Copy menu and beep, so we skip it and use what's already there.
+                selected = before;
+                changed = false;
+            } else {
+                // Normal app: send Cmd+C WITHOUT clearing first (see class doc), then wait for the
+                // clipboard to change so "select -> hotkey" works without a manual copy.
+                copySelection();
+                selected = waitForClipboardChange(before);
+                changed = !selected.equals(before);
+            }
 
             if (selected.isBlank()) {
-                Log.line("no selection (clipboard empty after copy) front=" + front);
+                Log.line("no selection (clipboard empty) front=" + front + " terminal=" + terminal);
                 return;
             }
 
-            Log.line("translate front=" + front + " changed=" + changed
+            Log.line("translate front=" + front + " terminal=" + terminal + " changed=" + changed
                     + " len=" + selected.length() + " text=\"" + Log.preview(selected) + "\"");
             runTranslate(selected);
         } catch (Throwable t) {
@@ -160,10 +170,20 @@ public class TranslateRunner {
             String asn = capture("/usr/bin/lsappinfo", "front").trim();
             if (asn.isEmpty()) return "?";
             String info = capture("/usr/bin/lsappinfo", "info", "-only", "bundleid", asn).trim();
-            return info.isEmpty() ? "?" : info;
+            return parseBundleId(info);
         } catch (Exception e) {
             return "?";
         }
+    }
+
+    /** lsappinfo prints e.g. {@code "CFBundleIdentifier"="com.apple.Terminal"} — pull the value out. */
+    private static String parseBundleId(String info) {
+        int eq = info.lastIndexOf('=');
+        String v = (eq >= 0 ? info.substring(eq + 1) : info).trim();
+        if (v.length() >= 2 && v.startsWith("\"") && v.endsWith("\"")) {
+            v = v.substring(1, v.length() - 1);
+        }
+        return v.isEmpty() ? "?" : v;
     }
 
     private String capture(String... cmd) throws Exception {

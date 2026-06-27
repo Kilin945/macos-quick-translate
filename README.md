@@ -46,7 +46,13 @@ macOS will ask for permission to run the script. Click **Allow**.
 
 The macOS Service above only works in apps that hand selected text to the Services menu. Some apps (claude.ai in the browser, Mail, the Claude desktop app) don't, so ⌘/ does nothing there.
 
-`java-trigger/` solves this: a small background app (`QuickTranslate.app`) that listens for a global hotkey, simulates ⌘C to grab the selection (works in **every** app), and feeds the text to the same `translate.py` — unchanged. It shows the same dialog / notification.
+`java-trigger/` solves this: a small background app (`QuickTranslate.app`) that listens for a global hotkey and feeds the selected text to the same `translate.py` — unchanged — showing the same dialog / notification.
+
+How it grabs the selection:
+- **Normal apps** — it simulates ⌘C to copy the selection, then translates the result.
+- **Terminal apps** (those listed in `terminal_apps`, e.g. Claude Code running in Terminal.app) — the terminal owns the selection itself (copy-on-select / Ctrl+C), so the app does **not** send ⌘C (which would only hit the terminal's disabled Copy menu and beep). It just translates what the terminal already placed on the clipboard.
+
+It never clears the clipboard, so a selection you copied yourself is never destroyed.
 
 **Build & install:**
 ```bash
@@ -56,9 +62,14 @@ ditto build/jpackage/QuickTranslate.app /Applications/QuickTranslate.app
 open /Applications/QuickTranslate.app
 ```
 
-**Grant Accessibility:** System Settings → Privacy & Security → Accessibility → enable `QuickTranslate.app` (needed so it can send ⌘C to copy the selection; the global hotkey itself is registered via macOS Carbon and needs no permission). Re-grant after each rebuild — the signature changes.
+**Grant Accessibility:** System Settings → Privacy & Security → Accessibility → enable `QuickTranslate.app` (needed so it can send ⌘C to copy the selection in normal apps; the global hotkey itself is registered via macOS Carbon and needs no permission). The grant is path-based and usually survives rebuilds; if copy stops working in normal apps after a rebuild, remove and re-add `QuickTranslate.app` in that list.
 
-**Auto-start at login:** add `QuickTranslate.app` to System Settings → General → Login Items.
+**Auto-start at login + crash auto-restart:** install the bundled LaunchAgent template (run from the repo root; `sed` fills in this repo's path).
+```bash
+sed "s#__PROJECT_DIR__#$(pwd)#g" scripts/com.quicktranslate.plist.sample > ~/Library/LaunchAgents/com.quicktranslate.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.quicktranslate.plist
+```
+It starts at login (`RunAtLoad`) and relaunches within seconds if it ever crashes (`KeepAlive`). Stop it with `launchctl bootout gui/$(id -u)/com.quicktranslate`. (A built-in single-instance lock means it's safe even if an old Login Item also launches it.)
 
 **Disable the old Service binding** to avoid a key conflict: System Settings → Keyboard → Keyboard Shortcuts → Services → uncheck ⌘/ on Google翻譯.
 
@@ -67,11 +78,15 @@ open /Applications/QuickTranslate.app
 hotkey = cmd+'              # also e.g. cmd+shift+t, ctrl+alt+space
 python = /opt/homebrew/bin/python3
 script = /path/to/translate.py
-copy_delay_ms     = 150     # wait after ⌘C before reading the clipboard
-restore_clipboard = true    # put your original clipboard back afterwards
+copy_delay_ms = 150         # max wait for the clipboard to update after ⌘C
+terminal_apps = com.apple.Terminal   # comma-separated bundle ids where ⌘C is NOT sent
+                                     # (selection owned by the app, e.g. copy-on-select);
+                                     # add others, e.g. com.googlecode.iterm2
 ```
 
-> Relies on ⌘C: a selection that can't be copied (images, copy-blocked fields) can't be translated. If nothing is selected the hotkey does nothing — the clipboard is cleared before ⌘C and re-checked, so stale clipboard content is never mistranslated.
+> In normal apps it sends ⌘C and translates the fresh selection; in `terminal_apps` it translates whatever the terminal already copied. The clipboard is never cleared. A selection that can't be copied (images, copy-blocked fields) can't be translated; pressing the hotkey with nothing selected may translate whatever is currently on the clipboard.
+
+**Logs:** every trigger is recorded to `logs/quicktranslate.log` (frontmost app, whether the clipboard changed, the copied text), rotated daily and auto-pruned after 30 days. Raw stdout/stderr (crashes) go to `logs/quicktranslate.out.log`.
 
 ### Pagination
 
@@ -196,7 +211,13 @@ cp -r "Google翻譯.workflow" ~/Library/Services/
 
 上面的 macOS 服務只在「會把選取文字交給服務選單」的 App 生效。有些 App（瀏覽器裡的 claude.ai、Mail、Claude 桌面 App）不交，所以在那邊按 ⌘/ 沒反應。
 
-`java-trigger/` 解決這個問題：一個小的背景 App（`QuickTranslate.app`），監聽全域熱鍵，模擬 ⌘C 把選取文字複製起來（**每個 App 都有效**），再交給同一支 `translate.py`（完全沒改），跳出一樣的對話框 / 通知。
+`java-trigger/` 解決這個問題：一個小的背景 App（`QuickTranslate.app`），監聽全域熱鍵，把選取文字交給同一支 `translate.py`（完全沒改），跳出一樣的對話框 / 通知。
+
+取得選取文字的方式：
+- **一般 App** — 模擬 ⌘C 複製選取，再翻譯結果。
+- **終端機 App**（列在 `terminal_apps` 裡的，例如在 Terminal.app 裡跑的 Claude Code）— 選取是由 App 自己管的（選取即複製 / Ctrl+C），所以**不送** ⌘C（送了也只會打到終端機反灰的拷貝選單而「兜」一聲）。直接翻譯終端機已經放進剪貼簿的內容。
+
+它**不會清空剪貼簿**，所以你自己複製好的東西不會被破壞。
 
 **建置與安裝：**
 ```bash
@@ -206,9 +227,14 @@ ditto build/jpackage/QuickTranslate.app /Applications/QuickTranslate.app
 open /Applications/QuickTranslate.app
 ```
 
-**授權輔助使用：** 系統設定 → 隱私權與安全性 → 輔助使用 → 開啟 `QuickTranslate.app`（送出 ⌘C 複製選取文字需要這個權限；全域熱鍵本身透過 macOS Carbon 註冊，不需要權限）。每次重新打包後簽章會變，要重新授權一次。
+**授權輔助使用：** 系統設定 → 隱私權與安全性 → 輔助使用 → 開啟 `QuickTranslate.app`（在一般 App 送出 ⌘C 複製選取文字需要這個權限；全域熱鍵本身透過 macOS Carbon 註冊，不需要權限）。授權是綁路徑的，通常重新打包後仍有效；若重建後一般 App 複製失效，把 `QuickTranslate.app` 從清單移除再重新加入即可。
 
-**開機自動啟動：** 把 `QuickTranslate.app` 加到 系統設定 → 一般 → 登入項目。
+**開機自動啟動 + 崩潰自動重啟：** 安裝內附的 LaunchAgent 範本（在 repo 根目錄執行，`sed` 會填入這個 repo 的路徑）。
+```bash
+sed "s#__PROJECT_DIR__#$(pwd)#g" scripts/com.quicktranslate.plist.sample > ~/Library/LaunchAgents/com.quicktranslate.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.quicktranslate.plist
+```
+它會開機自啟（`RunAtLoad`），崩潰時幾秒內自動重啟（`KeepAlive`）。停止：`launchctl bootout gui/$(id -u)/com.quicktranslate`。（內建單例鎖，就算還留著舊的登入項目也不會跑出兩份。）
 
 **停用舊的服務綁定** 以免搶鍵：系統設定 → 鍵盤 → 鍵盤快速鍵 → 服務 → 取消「Google翻譯」的 ⌘/。
 
@@ -217,11 +243,14 @@ open /Applications/QuickTranslate.app
 hotkey = cmd+'              # 也可以是 cmd+shift+t、ctrl+alt+space
 python = /opt/homebrew/bin/python3
 script = /path/to/translate.py
-copy_delay_ms     = 150     # 按下 ⌘C 後等多久再讀剪貼簿
-restore_clipboard = true    # 翻完是否還原你原本的剪貼簿
+copy_delay_ms = 150         # ⌘C 後等剪貼簿更新的最長時間
+terminal_apps = com.apple.Terminal   # 不送 ⌘C 的終端機 bundle id（選取由 App 自己管，
+                                     # 例如選取即複製）；逗號分隔，可加 com.googlecode.iterm2
 ```
 
-> **限制：完全依賴 ⌘C —— 只有「⌘C 複製得到的東西」才翻得了。** 無法複製的選取（圖片、禁止複製的欄位、沒有文字層的掃描 PDF）就無法翻譯。沒選任何文字時按熱鍵不會有反應 —— 程式會在 ⌘C 前先清空剪貼簿再檢查，所以不會誤翻你剪貼簿裡的舊內容。
+> 一般 App 會送 ⌘C 翻譯當下選取；`terminal_apps` 裡的則直接翻譯終端機已經複製好的內容。**不會清空剪貼簿。** 無法複製的選取（圖片、禁止複製的欄位）翻不了；沒選任何文字就按熱鍵，可能會翻到剪貼簿裡現有的內容。
+
+**Log：** 每次觸發都記錄到 `logs/quicktranslate.log`（前景 App、剪貼簿有沒有變、複製到的文字），每日輪替、超過 30 天自動清除。原始 stdout/stderr（崩潰）寫到 `logs/quicktranslate.out.log`。
 
 ### 分頁按鈕說明
 

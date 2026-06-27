@@ -7,8 +7,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 
 /**
  * Loads ~/.quicktranslate.conf. Creates a default file on first run, then the user
@@ -24,6 +26,10 @@ public class Config {
     // where to write the runtime log; kept inside the project dir so it's easy to tail
     public Path logFile;
 
+    // bundle ids of terminal apps: in these we DON'T synthesize Cmd+C (it would hit the terminal's
+    // disabled Copy menu and beep). The selection is already on the clipboard via the app's own copy.
+    public Set<String> terminalApps;
+
     // parsed hotkey, as a javax.swing.KeyStroke for jkeymaster to register with the OS
     public KeyStroke keyStroke;
     public String hotkeyRaw;
@@ -37,8 +43,9 @@ public class Config {
             hotkey = cmd+'
 
             # translation backend (reuses your existing translate.py, unchanged)
+            # set `script` to the absolute path of translate.py in your checkout
             python = /opt/homebrew/bin/python3
-            script = /Users/yeqilin/Workspace/macos-quick-translate/translate.py
+            script = /path/to/macos-quick-translate/translate.py
 
             # advanced (usually leave as-is)
             copy_delay_ms     = 150
@@ -46,6 +53,13 @@ public class Config {
             # it). true: restore whatever was on the clipboard before translating (but then you
             # can't paste the just-translated word).
             restore_clipboard = false
+
+            # terminal apps (comma-separated bundle ids): here the hotkey does NOT send Cmd+C — the
+            # selection is already on the clipboard via the app's own copy (e.g. Claude Code's
+            # copy-on-select), and a synthetic Cmd+C would just beep on the terminal's disabled Copy
+            # menu. The log prints the frontmost app's id, so add others as needed (iTerm =
+            # com.googlecode.iterm2).
+            terminal_apps = com.apple.Terminal
             """;
 
     public static Config load() {
@@ -72,6 +86,7 @@ public class Config {
         c.copyDelayMs = parseInt(p.getProperty("copy_delay_ms", "150").trim(), 150);
         c.restoreClipboard = Boolean.parseBoolean(p.getProperty("restore_clipboard", "true").trim());
         c.parseHotkey(p.getProperty("hotkey", "cmd+'").trim());
+        c.parseTerminalApps(p.getProperty("terminal_apps", "com.apple.Terminal"));
         c.computeLogFile();
         return c;
     }
@@ -94,6 +109,19 @@ public class Config {
             // fall through to the home-dir default
         }
         logFile = Paths.get(System.getProperty("user.home"), "Library", "Logs", "QuickTranslate.log");
+    }
+
+    private void parseTerminalApps(String s) {
+        terminalApps = new HashSet<>();
+        for (String t : s.split(",")) {
+            String v = t.trim().toLowerCase();
+            if (!v.isEmpty()) terminalApps.add(v);
+        }
+    }
+
+    /** True if the given frontmost bundle id is a configured terminal (don't synthesize Cmd+C). */
+    public boolean isTerminal(String bundleId) {
+        return bundleId != null && terminalApps.contains(bundleId.toLowerCase());
     }
 
     private void parseHotkey(String s) {
