@@ -1,0 +1,8 @@
+# QuickTranslate config. Copy to ~/.quicktranslate.conf (install.sh does this and fills in paths).
+
+hotkey = cmd+'                          # e.g. cmd+shift+t, ctrl+alt+space
+python = /opt/homebrew/bin/python3
+script = __PROJECT_DIR__/translate.py
+copy_delay_ms = 150                     # max ms to wait for the clipboard after Cmd+C
+terminal_apps = com.apple.Terminal      # apps where Cmd+C is NOT sent (selection owned by the app);
+                                        # comma-separated bundle ids, e.g. com.googlecode.iterm2

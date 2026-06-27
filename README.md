@@ -54,13 +54,19 @@ How it grabs the selection:
 
 It never clears the clipboard, so a selection you copied yourself is never destroyed.
 
-**Build & install:**
+**Install — double-click `install.command`** in Finder (or run `./scripts/install.sh`). It builds the app, installs it to Applications, sets up auto-start at login + crash auto-restart, and opens the Accessibility settings pane — just switch **QuickTranslate** on. First time, if macOS blocks it: right-click → Open. Remove everything with `./scripts/uninstall.sh`.
+
+<details><summary>Build &amp; install by hand instead</summary>
+
 ```bash
 cd java-trigger
 ./build_app.sh                                              # → build/jpackage/QuickTranslate.app
 ditto build/jpackage/QuickTranslate.app /Applications/QuickTranslate.app
 open /Applications/QuickTranslate.app
 ```
+</details>
+
+The two sections below (Accessibility, Auto-start) are what `install.command` automates — read on only if installing by hand.
 
 **Grant Accessibility:** System Settings → Privacy & Security → Accessibility → enable `QuickTranslate.app` (needed so it can send ⌘C to copy the selection in normal apps; the global hotkey itself is registered via macOS Carbon and needs no permission). The grant is path-based and usually survives rebuilds; if copy stops working in normal apps after a rebuild, remove and re-add `QuickTranslate.app` in that list.
 
@@ -219,13 +225,19 @@ cp -r "Google翻譯.workflow" ~/Library/Services/
 
 它**不會清空剪貼簿**，所以你自己複製好的東西不會被破壞。
 
-**建置與安裝：**
+**安裝 — 在 Finder 點兩下 `install.command`**（或執行 `./scripts/install.sh`）。它會自動 build、把 App 裝進「應用程式」、設定開機自啟 + 崩潰自動重啟，並跳出「輔助使用」設定頁——把 **QuickTranslate** 的開關打開即可。第一次若被 macOS 擋下：對檔案按右鍵 → 打開。移除用 `./scripts/uninstall.sh`。
+
+<details><summary>改用手動建置與安裝</summary>
+
 ```bash
 cd java-trigger
 ./build_app.sh                                              # → build/jpackage/QuickTranslate.app
 ditto build/jpackage/QuickTranslate.app /Applications/QuickTranslate.app
 open /Applications/QuickTranslate.app
 ```
+</details>
+
+下面兩段（輔助使用、開機自動啟動）就是 `install.command` 幫你自動做的——想手動裝才需要看。
 
 **授權輔助使用：** 系統設定 → 隱私權與安全性 → 輔助使用 → 開啟 `QuickTranslate.app`（在一般 App 送出 ⌘C 複製選取文字需要這個權限；全域熱鍵本身透過 macOS Carbon 註冊，不需要權限）。授權是綁路徑的，通常重新打包後仍有效；若重建後一般 App 複製失效，把 `QuickTranslate.app` 從清單移除再重新加入即可。
 
