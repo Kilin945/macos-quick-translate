@@ -21,6 +21,9 @@ public class Config {
     public int copyDelayMs;
     public boolean restoreClipboard;
 
+    // where to write the runtime log; kept inside the project dir so it's easy to tail
+    public Path logFile;
+
     // parsed hotkey, as a javax.swing.KeyStroke for jkeymaster to register with the OS
     public KeyStroke keyStroke;
     public String hotkeyRaw;
@@ -69,7 +72,28 @@ public class Config {
         c.copyDelayMs = parseInt(p.getProperty("copy_delay_ms", "150").trim(), 150);
         c.restoreClipboard = Boolean.parseBoolean(p.getProperty("restore_clipboard", "true").trim());
         c.parseHotkey(p.getProperty("hotkey", "cmd+'").trim());
+        c.computeLogFile();
         return c;
+    }
+
+    /**
+     * Log next to the project (the dir holding translate.py), at logs/quicktranslate.log, so the
+     * user can tail it right inside the repo. Falls back to ~/Library/Logs if the script path is
+     * unusable.
+     */
+    private void computeLogFile() {
+        try {
+            if (script != null && !script.isBlank()) {
+                Path parent = Paths.get(script).toAbsolutePath().getParent();
+                if (parent != null) {
+                    logFile = parent.resolve("logs").resolve("quicktranslate.log");
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+            // fall through to the home-dir default
+        }
+        logFile = Paths.get(System.getProperty("user.home"), "Library", "Logs", "QuickTranslate.log");
     }
 
     private void parseHotkey(String s) {

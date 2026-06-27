@@ -2,7 +2,6 @@ package quicktranslate;
 
 import java.awt.Robot;
 import java.awt.event.KeyEvent;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,20 +9,30 @@ import java.nio.file.Paths;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * On trigger: copy the current selection, read it, optionally restore the previous clipboard,
- * then hand the text to the existing translate.py via TRANSLATE_INPUT. translate.py shows its
- * own dialog/notification, so this class never touches the UI.
+ * On trigger: copy the current selection (Cmd+C), then translate whatever ends up on the
+ * clipboard. The text is handed to the existing translate.py via TRANSLATE_INPUT; translate.py
+ * shows its own dialog/notification, so this class never touches the UI.
  *
- * Copy is performed by the bundled native `copykey` helper, which posts a Cmd+C whose Command
- * flag is bound directly to the C key event (via a private CGEvent source). The old approach
- * (java.awt.Robot pressing META and C as SEPARATE events) raced with the user's still-held
- * physical Command from the hotkey: the modifier intermittently failed to ride with C, so the
- * synthetic keystroke degraded to a bare "C" that copied nothing AND leaked into the active
- * input method (stray Bopomofo/pinyin). copykey eliminates that race; Robot remains only as a
- * fallback if the helper is unavailable.
+ * Design note — why we do NOT clear the clipboard first:
+ *   The previous version did setClipboard("") before Cmd+C, using "empty afterwards" to mean
+ *   "nothing was selected". That breaks any app that puts the selection on the clipboard itself
+ *   (terminals in copy-on-select mode, e.g. Claude Code's TUI): the clear wiped the text the user
+ *   had already copied, and the synthetic Cmd+C — which goes to Terminal.app, not the TUI — could
+ *   not re-copy it (the selection lives inside the TUI, Terminal has no native selection). Result:
+ *   empty clipboard -> "no selection" -> no translation, plus a beep from Cmd+C hitting Terminal's
+ *   disabled Copy menu.
  *
- * Clipboard I/O goes through native pbcopy/pbpaste (short-lived processes) rather than
- * java.awt.Clipboard, so this long-lived JVM never lingers as the macOS pasteboard owner.
+ *   New behaviour (works everywhere without per-app special-casing):
+ *     1. remember what's on the clipboard,
+ *     2. send Cmd+C (so plain "select -> hotkey" still works in normal apps),
+ *     3. translate whatever the clipboard holds afterwards.
+ *   In a normal app the Cmd+C copies the fresh selection. In a copy-on-select terminal the text is
+ *   already on the clipboard (put there at selection time) and we simply use it. Nothing is
+ *   destroyed, so no workflow is broken.
+ *
+ * Copy is performed by the bundled native `copykey` helper (binds Command directly to the C key
+ * event), with java.awt.Robot as a fallback. Clipboard reads go through pbpaste (a short-lived
+ * process) so this long-lived JVM never lingers as the macOS pasteboard owner.
  */
 public class TranslateRunner {
 
@@ -37,9 +46,10 @@ public class TranslateRunner {
         try {
             robot = new Robot();
         } catch (Exception e) {
-            System.err.println("[QuickTranslate] Robot init failed (grant Accessibility?): " + e.getMessage());
+            Log.line("Robot init failed (grant Accessibility?): " + e.getMessage());
         }
         copyHelper = resolveCopyHelper();
+        Log.line("copy helper = " + (copyHelper != null ? copyHelper : "(none, using Robot fallback)"));
     }
 
     /** Locate the bundled `copykey` helper (sits next to the jpackage launcher). */
@@ -60,61 +70,53 @@ public class TranslateRunner {
 
     private void run() {
         try {
-            String saved = readClipboard();
+            String front = frontmostApp();
+            String before = nz(readClipboard());
 
-            // clear first so leftover clipboard content can't be mistaken for a fresh selection:
-            // if the copy grabs nothing, the clipboard stays blank -> "no selection"
-            setClipboard("");
+            // send Cmd+C WITHOUT clearing first (see class doc), then wait for the clipboard to
+            // change. If it changes, a fresh copy landed (normal app). If it doesn't, we fall back
+            // to whatever is already there (copy-on-select terminal, or a manual pre-copy).
             copySelection();
+            String selected = waitForClipboardChange(before);
+            boolean changed = !selected.equals(before);
 
-            // poll (instead of a fixed sleep) so we read the selection as soon as the copy lands
-            String selected = waitForClipboard();
-            boolean gotSelection = selected != null && !selected.isBlank();
-
-            // Restore the previous clipboard when the user asked for it, OR when nothing was
-            // copied (never leave the clipboard wiped just because the hotkey was pressed with no
-            // selection). Guard: only restore if the clipboard still holds exactly what we copied,
-            // so we never clobber a copy the user made in the meantime.
-            if (config.restoreClipboard || !gotSelection) {
-                String now = readClipboard();
-                if (now != null && now.equals(selected != null ? selected : "")) {
-                    setClipboard(saved != null ? saved : "");
-                }
-            }
-
-            if (!gotSelection) {
-                System.out.println("[QuickTranslate] no text selected (clipboard empty after copy)");
+            if (selected.isBlank()) {
+                Log.line("no selection (clipboard empty after copy) front=" + front);
                 return;
             }
+
+            Log.line("translate front=" + front + " changed=" + changed
+                    + " len=" + selected.length() + " text=\"" + Log.preview(selected) + "\"");
             runTranslate(selected);
-        } catch (Exception e) {
-            System.err.println("[QuickTranslate] error: " + e.getMessage());
+        } catch (Throwable t) {
+            // never let the worker die in a way that could wedge the listener; just log it
+            Log.line("ERROR in run(): " + t);
         } finally {
             running.set(false);
         }
     }
 
     /**
-     * Wait for the async copy to populate the clipboard, polling in small steps and returning as
-     * soon as content appears. Caps at ~max(copyDelayMs, 300ms); if nothing shows up the
-     * selection was empty and we return "" (treated as "no selection").
+     * Wait for the clipboard to differ from {@code before} (i.e. for our Cmd+C to actually copy
+     * something), polling in small steps. Returns as soon as it changes, or the current contents
+     * after a cap of ~max(copyDelayMs, 300)ms if it never changes (the copy-on-select / pre-copy /
+     * nothing-selected cases all read whatever is currently there).
      */
-    private String waitForClipboard() throws InterruptedException {
+    private String waitForClipboardChange(String before) throws InterruptedException {
         int cap = Math.max(config.copyDelayMs, 300);
         int waited = 0;
-        String s = readClipboard();
-        while ((s == null || s.isEmpty()) && waited < cap) {
+        String s = nz(readClipboard());
+        while (waited < cap && s.equals(before)) {
             Thread.sleep(15);
             waited += 15;
-            s = readClipboard();
+            s = nz(readClipboard());
         }
         return s;
     }
 
     /**
      * Trigger a Copy. Prefer the native `copykey` helper (binds Command to the C keystroke, so it
-     * never degrades to a bare C). Fall back to java.awt.Robot only if the helper is missing or
-     * errors — that path has the cmd-drop race this fix is about, so it's a last resort.
+     * never degrades to a bare C). Fall back to java.awt.Robot only if the helper is missing.
      */
     private void copySelection() {
         if (copyHelper != null) {
@@ -122,7 +124,7 @@ public class TranslateRunner {
                 new ProcessBuilder(copyHelper).start().waitFor();
                 return;
             } catch (Exception e) {
-                System.err.println("[QuickTranslate] copykey failed, using Robot fallback: " + e.getMessage());
+                Log.line("copykey failed, using Robot fallback: " + e.getMessage());
             }
         }
         copyViaRobot();
@@ -148,17 +150,31 @@ public class TranslateRunner {
         }
     }
 
-    /** Write the clipboard via `pbcopy`; it writes the real bytes and exits, so the JVM never
-     *  becomes the pasteboard owner. */
-    private void setClipboard(String s) {
+    /**
+     * Best-effort frontmost-app bundle id, for the log only (helps decide later whether a given
+     * app needs special handling). Uses the built-in `lsappinfo` — no special permission required.
+     * Returns "?" on any failure.
+     */
+    private String frontmostApp() {
         try {
-            Process p = new ProcessBuilder("/usr/bin/pbcopy").start();
-            try (OutputStream os = p.getOutputStream()) {
-                os.write(s.getBytes(StandardCharsets.UTF_8));
-            }
-            p.waitFor();
-        } catch (Exception ignored) {
+            String asn = capture("/usr/bin/lsappinfo", "front").trim();
+            if (asn.isEmpty()) return "?";
+            String info = capture("/usr/bin/lsappinfo", "info", "-only", "bundleid", asn).trim();
+            return info.isEmpty() ? "?" : info;
+        } catch (Exception e) {
+            return "?";
         }
+    }
+
+    private String capture(String... cmd) throws Exception {
+        Process p = new ProcessBuilder(cmd).start();
+        byte[] out = p.getInputStream().readAllBytes();
+        p.waitFor();
+        return new String(out, StandardCharsets.UTF_8);
+    }
+
+    private static String nz(String s) {
+        return s == null ? "" : s;
     }
 
     private void runTranslate(String text) throws Exception {

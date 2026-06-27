@@ -5,3 +5,7 @@ __pycache__/
 # java-trigger build artifacts
 java-trigger/.gradle/
 java-trigger/build/
+
+# runtime logs (written next to translate.py)
+logs/
+.idea/
