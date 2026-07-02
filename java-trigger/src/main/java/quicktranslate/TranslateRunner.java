@@ -151,7 +151,11 @@ public class TranslateRunner {
     /** Read the clipboard via `pbpaste` (a short-lived process; no lingering AWT ownership). */
     private String readClipboard() {
         try {
-            Process p = new ProcessBuilder("/usr/bin/pbpaste").start();
+            ProcessBuilder pb = new ProcessBuilder("/usr/bin/pbpaste");
+            // launchd provides no LANG, and without it pbpaste emits the legacy system
+            // encoding (Big5 on zh-TW Macs) — force UTF-8 to match the decode below
+            pb.environment().put("LANG", "en_US.UTF-8");
+            Process p = pb.start();
             byte[] out = p.getInputStream().readAllBytes();
             p.waitFor();
             return new String(out, StandardCharsets.UTF_8);
