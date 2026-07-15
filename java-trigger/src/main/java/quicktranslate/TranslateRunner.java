@@ -193,9 +193,9 @@ public class TranslateRunner {
                 return null;
             }
             if (p.exitValue() != 0) {
-                // surface WHY (helper prints the AXError, e.g. untrusted / no focused element)
+                // surface WHY in full (helper prints one short diagnostic line, e.g. untrusted)
                 String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-                Log.line("axSelectedText exit=" + p.exitValue() + " err=" + Log.preview(err.trim()));
+                Log.line("axSelectedText exit=" + p.exitValue() + " err=" + err.trim());
                 return null;
             }
             return new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
