@@ -66,6 +66,13 @@
 
 改為比照 `copykey.swift` 模式：新增 `java-trigger/axselect.swift`（直接呼叫 Accessibility C API `AXUIElementCopyAttributeValue` 讀 `AXSelectedText`，印到 stdout；exit 0 = 讀取成功、stdout 可能為空，exit 1 = AX 失敗），由 `build_app.sh` 以 swiftc 編進 bundle，`TranslateRunner.axSelectedText()` 改為呼叫此 helper。只需 app 既有的「輔助使用」授權（與 copykey 相同、已驗證子程序可沿用），不再涉及 Apple Events。
 
+另外兩個實測發現：
+
+- **system-wide 查詢在 launchd 下失敗**：`AXUIElementCreateSystemWide` 的焦點元件查詢回 AXError -25204（kAXErrorCannotComplete，查詢訊息送不到目標）。axselect 因此在失敗時 fallback：以 `NSWorkspace.frontmostApplication` 取得前景 app 的 PID，`AXUIElementCreateApplication` 直接向該 app 查焦點元件。實機驗證走的是 fallback 路徑。
+- **每次 rebuild 後「輔助使用」授權失效**：ad-hoc 簽章隨 build 改變，系統設定的開關顯示 ON 但實際不信任，需關掉再開。axselect 開頭以 `AXIsProcessTrusted()` 檢查並在 stderr/log 印出明確指引。根治方向（未做）：`build_app.sh` 改用固定自簽憑證簽章。
+
+四情境驗證於 2026-07-16 全數通過（一般 terminal 選字直翻 / Claude Code 剪貼簿路徑 / 無選取 / 一般 app 合成 Cmd+C）。
+
 ---
 
 # 實作計畫
