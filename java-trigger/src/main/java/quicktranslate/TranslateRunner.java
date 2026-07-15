@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -29,6 +30,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   In a normal app the Cmd+C copies the fresh selection. In a copy-on-select terminal the text is
  *   already on the clipboard (put there at selection time) and we simply use it. Nothing is
  *   destroyed, so no workflow is broken.
+ *
+ * Terminal special case (see Config.terminalApps): we never synthesize Cmd+C there. First we ask
+ * Accessibility for the terminal's native selection (AXSelectedText) so a plain-shell
+ * "select -> hotkey" translates directly; if there is none (TUIs like Claude Code intercept the
+ * mouse and copy-on-select instead), we translate whatever is already on the clipboard.
  *
  * Copy is performed by the bundled native `copykey` helper (binds Command directly to the C key
  * event), with java.awt.Robot as a fallback. Clipboard reads go through pbpaste (a short-lived
@@ -76,11 +82,20 @@ public class TranslateRunner {
 
             String selected;
             boolean changed;
+            String ax = "n/a";
             if (terminal) {
-                // In a terminal the selection is owned by the app (e.g. Claude Code's copy-on-select
-                // already put it on the clipboard). A synthetic Cmd+C would only hit Terminal's
-                // disabled Copy menu and beep, so we skip it and use what's already there.
-                selected = before;
+                // A synthetic Cmd+C would only hit the terminal's disabled Copy menu and beep, so
+                // we never send one here. Instead, prefer the terminal's NATIVE selection read via
+                // Accessibility (plain shell: select -> hotkey, no copy needed). TUIs that own the
+                // mouse (e.g. Claude Code) leave no native selection — AX reads empty and we fall
+                // back to the clipboard their copy-on-select already filled.
+                String axSel = axSelectedText();
+                ax = (axSel == null) ? "error" : (axSel.isBlank() ? "miss" : "hit");
+                if ("hit".equals(ax)) {
+                    selected = axSel;
+                } else {
+                    selected = before;
+                }
                 changed = false;
             } else {
                 // Normal app: send Cmd+C WITHOUT clearing first (see class doc), then wait for the
@@ -91,11 +106,13 @@ public class TranslateRunner {
             }
 
             if (selected.isBlank()) {
-                Log.line("no selection (clipboard empty) front=" + front + " terminal=" + terminal);
+                Log.line("no selection (clipboard empty) front=" + front + " terminal=" + terminal
+                        + " ax=" + ax);
                 return;
             }
 
-            Log.line("translate front=" + front + " terminal=" + terminal + " changed=" + changed
+            Log.line("translate front=" + front + " terminal=" + terminal + " ax=" + ax
+                    + " changed=" + changed
                     + " len=" + selected.length() + " text=\"" + Log.preview(selected) + "\"");
             runTranslate(selected);
         } catch (Throwable t) {
@@ -146,6 +163,45 @@ public class TranslateRunner {
         robot.keyPress(KeyEvent.VK_C);
         robot.keyRelease(KeyEvent.VK_C);
         robot.keyRelease(KeyEvent.VK_META);
+    }
+
+    /**
+     * Ask Accessibility for the frontmost app's focused element's AXSelectedText. In a terminal
+     * this is the native mouse selection (plain shell), which lets "select -> hotkey" translate
+     * without any copy. TUIs that own the mouse (e.g. Claude Code's mouse-reporting mode) leave
+     * the terminal with no native selection, so this reads "" and callers fall back to the
+     * clipboard that copy-on-select already filled.
+     *
+     * Returns the selected text ("" when nothing is selected), or null on any failure — timeout,
+     * osascript error (e.g. the focused element has no AXSelectedText attribute), or exception —
+     * so callers treat failure exactly like "no selection". Uses the app's existing Accessibility
+     * grant; no new permission prompt.
+     */
+    private String axSelectedText() {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("/usr/bin/osascript",
+                    "-e", "tell application \"System Events\"",
+                    "-e", "set p to first application process whose frontmost is true",
+                    "-e", "set fe to value of attribute \"AXFocusedUIElement\" of p",
+                    "-e", "value of attribute \"AXSelectedText\" of fe",
+                    "-e", "end tell");
+            // launchd provides no LANG; without it osascript can emit the legacy system
+            // encoding (Big5 on zh-TW Macs) — force UTF-8 to match the decode below
+            pb.environment().put("LANG", "en_US.UTF-8");
+            Process p = pb.start();
+            if (!p.waitFor(1, TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                Log.line("axSelectedText timeout");
+                return null;
+            }
+            if (p.exitValue() != 0) return null;
+            String s = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            // osascript terminates the result with a newline that is not part of the selection
+            return s.endsWith("\n") ? s.substring(0, s.length() - 1) : s;
+        } catch (Exception e) {
+            Log.line("axSelectedText error: " + e);
+            return null;
+        }
     }
 
     /** Read the clipboard via `pbpaste` (a short-lived process; no lingering AWT ownership). */
