@@ -32,7 +32,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   destroyed, so no workflow is broken.
  *
  * Terminal special case (see Config.terminalApps): we never synthesize Cmd+C there. First we ask
- * Accessibility for the terminal's native selection (AXSelectedText) so a plain-shell
+ * Accessibility for the terminal's native selection (AXSelectedText, via the bundled `axselect`
+ * helper) so a plain-shell
  * "select -> hotkey" translates directly; if there is none (TUIs like Claude Code intercept the
  * mouse and copy-on-select instead), we translate whatever is already on the clipboard.
  *
@@ -46,6 +47,7 @@ public class TranslateRunner {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private Robot robot;
     private final String copyHelper; // path to the bundled `copykey` binary, or null if absent
+    private final String axHelper;   // path to the bundled `axselect` binary, or null if absent
 
     public TranslateRunner(Config config) {
         this.config = config;
@@ -54,15 +56,17 @@ public class TranslateRunner {
         } catch (Exception e) {
             Log.line("Robot init failed (grant Accessibility?): " + e.getMessage());
         }
-        copyHelper = resolveCopyHelper();
+        copyHelper = resolveHelper("copykey");
+        axHelper = resolveHelper("axselect");
         Log.line("copy helper = " + (copyHelper != null ? copyHelper : "(none, using Robot fallback)"));
+        Log.line("ax helper   = " + (axHelper != null ? axHelper : "(none, terminal selections use clipboard only)"));
     }
 
-    /** Locate the bundled `copykey` helper (sits next to the jpackage launcher). */
-    private static String resolveCopyHelper() {
+    /** Locate a bundled native helper binary (sits next to the jpackage launcher). */
+    private static String resolveHelper(String name) {
         String appPath = System.getProperty("jpackage.app-path");
         if (appPath != null) {
-            Path p = Paths.get(appPath).getParent().resolve("copykey");
+            Path p = Paths.get(appPath).getParent().resolve(name);
             if (Files.isExecutable(p)) return p.toString();
         }
         return null;
@@ -166,44 +170,35 @@ public class TranslateRunner {
     }
 
     /**
-     * Ask Accessibility for the frontmost app's focused element's AXSelectedText. In a terminal
+     * Read the focused element's AXSelectedText via the bundled `axselect` helper. In a terminal
      * this is the native mouse selection (plain shell), which lets "select -> hotkey" translate
      * without any copy. TUIs that own the mouse (e.g. Claude Code's mouse-reporting mode) leave
      * the terminal with no native selection, so this reads "" and callers fall back to the
      * clipboard that copy-on-select already filled.
      *
-     * Returns the selected text ("" when nothing is selected), or null on any failure — timeout,
-     * osascript error (e.g. the focused element has no AXSelectedText attribute), or exception —
-     * so callers treat failure exactly like "no selection". Uses the app's existing Accessibility
-     * grant; no new permission prompt.
+     * The helper talks to the Accessibility C API directly, covered by the app's existing
+     * Accessibility grant (same as copykey) — deliberately NOT osascript/System Events, whose
+     * separate Automation consent macOS silently refuses to prompt for from this launchd agent.
+     *
+     * Returns the selected text ("" when nothing is selected), or null on any failure — helper
+     * missing, timeout, or AX error — so callers treat failure exactly like "no selection".
      */
     private String axSelectedText() {
+        if (axHelper == null) return null;
         try {
-            ProcessBuilder pb = new ProcessBuilder("/usr/bin/osascript",
-                    "-e", "tell application \"System Events\"",
-                    "-e", "set p to first application process whose frontmost is true",
-                    "-e", "set fe to value of attribute \"AXFocusedUIElement\" of p",
-                    "-e", "value of attribute \"AXSelectedText\" of fe",
-                    "-e", "end tell");
-            // launchd provides no LANG; without it osascript can emit the legacy system
-            // encoding (Big5 on zh-TW Macs) — force UTF-8 to match the decode below
-            pb.environment().put("LANG", "en_US.UTF-8");
-            Process p = pb.start();
+            Process p = new ProcessBuilder(axHelper).start();
             if (!p.waitFor(1, TimeUnit.SECONDS)) {
                 p.destroyForcibly();
                 Log.line("axSelectedText timeout");
                 return null;
             }
             if (p.exitValue() != 0) {
-                // surface WHY (e.g. -25211 assistive access, -1743 Apple-events consent)
+                // surface WHY (helper prints the AXError, e.g. untrusted / no focused element)
                 String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-                Log.line("axSelectedText osascript exit=" + p.exitValue()
-                        + " err=" + Log.preview(err.trim()));
+                Log.line("axSelectedText exit=" + p.exitValue() + " err=" + Log.preview(err.trim()));
                 return null;
             }
-            String s = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            // osascript terminates the result with a newline that is not part of the selection
-            return s.endsWith("\n") ? s.substring(0, s.length() - 1) : s;
+            return new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (Exception e) {
             Log.line("axSelectedText error: " + e);
             return null;

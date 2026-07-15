@@ -60,6 +60,12 @@
 - **檢查「編輯 > 拷貝」選單 enabled 狀態再決定送不送 Cmd+C**：選單名稱隨系統語言變（Copy／拷貝），要靠快捷鍵字元枚舉選單項目，脆且慢，又會覆寫剪貼簿。
 - **terminal 內一律送 Cmd+C**：把 b38ed30 修掉的嗶聲問題請回來。
 
+## 實作後修正（2026-07-16）：osascript → 原生 axselect helper
+
+實測發現 osascript + System Events 這條路走不通：它需要獨立的「自動化（Apple Events）」授權，而 macOS 對 ad-hoc 簽章的 launchd 背景 app **不跳授權視窗、直接以 -1743 靜默拒絕**（加了 `NSAppleEventsUsageDescription` 也一樣）；就算真的取得授權，每次重 build 簽章改變授權又會失效。
+
+改為比照 `copykey.swift` 模式：新增 `java-trigger/axselect.swift`（直接呼叫 Accessibility C API `AXUIElementCopyAttributeValue` 讀 `AXSelectedText`，印到 stdout；exit 0 = 讀取成功、stdout 可能為空，exit 1 = AX 失敗），由 `build_app.sh` 以 swiftc 編進 bundle，`TranslateRunner.axSelectedText()` 改為呼叫此 helper。只需 app 既有的「輔助使用」授權（與 copykey 相同、已驗證子程序可沿用），不再涉及 Apple Events。
+
 ---
 
 # 實作計畫
