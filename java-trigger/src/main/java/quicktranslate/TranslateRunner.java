@@ -194,7 +194,13 @@ public class TranslateRunner {
                 Log.line("axSelectedText timeout");
                 return null;
             }
-            if (p.exitValue() != 0) return null;
+            if (p.exitValue() != 0) {
+                // surface WHY (e.g. -25211 assistive access, -1743 Apple-events consent)
+                String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+                Log.line("axSelectedText osascript exit=" + p.exitValue()
+                        + " err=" + Log.preview(err.trim()));
+                return null;
+            }
             String s = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             // osascript terminates the result with a newline that is not part of the selection
             return s.endsWith("\n") ? s.substring(0, s.length() - 1) : s;
