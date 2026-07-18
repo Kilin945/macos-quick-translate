@@ -40,6 +40,38 @@ def translate(text):
                 time.sleep(1)
     raise last_err
 
+# Offline fallback: Apple's on-device Translation framework via the bundled `translatenative`
+# helper (macOS 26+). Used when the Google endpoint is unreachable (e.g. Errno 8 DNS failure
+# with no network). Requires the en->zh-Hant language pack downloaded in System Settings >
+# General > Language & Region > Translation Languages.
+NATIVE_HELPER_CANDIDATES = [
+    '/Applications/QuickTranslate.app/Contents/MacOS/translatenative',
+    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 'java-trigger', 'build', 'translatenative'),
+]
+
+def translate_offline(text):
+    if detect_source_lang(text) != 'en':
+        # the native session needs an explicit *installed* source language; we only keep the
+        # en->zh-Hant pack, so non-English input has no offline path
+        log('offline fallback skipped: source not detected as en')
+        return None
+    helper = next((p for p in NATIVE_HELPER_CANDIDATES if os.access(p, os.X_OK)), None)
+    if helper is None:
+        log('offline fallback unavailable: translatenative helper not found')
+        return None
+    try:
+        # helper self-kills after 30s (watchdog); this outer timeout is the safety net
+        r = subprocess.run([helper, 'en', 'zh-Hant'], input=text.encode('utf-8'),
+                           capture_output=True, timeout=35)
+    except Exception as e:
+        log(f'offline fallback error: {e}')
+        return None
+    if r.returncode != 0:
+        log(f'offline fallback exit={r.returncode} err={r.stderr.decode("utf-8", "replace").strip()}')
+        return None
+    return r.stdout.decode('utf-8', 'replace').strip() or None
+
 def normalize_text(text):
     paragraphs = re.split(r'\n{2,}', text)
     cleaned = []
@@ -156,8 +188,16 @@ try:
     result = translate(text)
 except Exception as e:
     log(f'translate ERROR: {traceback.format_exc()}')
-    show_dialog(f"Translation failed: {str(e)[:100]}")
-    sys.exit(1)
+    result = translate_offline(text)
+    if result:
+        log(f'offline fallback OK: {_preview(result)}')
+    else:
+        msg = str(e)[:100]
+        # Errno 8 = getaddrinfo failure: no usable network/DNS at all, say so plainly
+        if 'Errno 8' in str(e):
+            msg = "網路未連線（DNS 解析失敗），且離線翻譯不可用。\n\n" + msg
+        show_dialog(f"Translation failed: {msg}")
+        sys.exit(1)
 
 if not result:
     log('translate returned empty')
