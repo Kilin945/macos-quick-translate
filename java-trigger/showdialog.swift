@@ -9,19 +9,15 @@ import AppKit
 // gives IMK the normal attachment path, and makes every close path below reliable.
 //
 // Usage: showdialog <window-title>   (text on stdin, UTF-8)
-// Prints nothing. Exit 0 = window shown and closed (or empty input), non-zero = startup failure.
+// Prints nothing. Exit 0 = window shown and closed (or empty input, or replaced by a newer
+// window), non-zero = startup failure.
 //
-// Close paths: Close button / title-bar red button / Return, Esc, clicking anywhere outside
-// the window, losing focus after holding it for 2s, and an orphan sweep — every 120s, a window
-// that is NOT key (nobody is looking at an unfocused window) closes itself, so a wedged or
-// abandoned parent can never leave a permanent window on screen. A focused window is never
-// swept, however long the user reads.
-//
-// The 2s hold requirement on the focus-loss path matters: a background process activating
-// itself can have focus bounced straight back (cooperative activation, or the user mid-
-// keystroke in another app), and closing on that bounce would kill the window before anyone
-// reads it. The outside-click monitor is the primary "back to work" dismissal and is immune
-// to focus bounces entirely.
+// The window floats above all normal windows (.floating level) so the user can page/scroll the
+// document behind it and compare against the translation — which is also why interacting with
+// other apps must NOT dismiss it. Close paths: Close button / title-bar red button / Return,
+// Esc (when the window has focus), a newer showdialog instance replacing this one, and an
+// orphan check — if the parent (translate.py, which blocks on us) dies, we are reparented to
+// launchd (ppid 1) and close ourselves, so an abandoned window can never stay on screen forever.
 
 func fail(_ msg: String) -> Never {
     FileHandle.standardError.write("showdialog: \(msg)\n".data(using: .utf8)!)
@@ -39,11 +35,37 @@ if bodyText.isEmpty {
     exit(0)
 }
 
+// single window: a new translation replaces the previous window instead of stacking floating
+// windows. SIGTERM is the replace signal — see the handler below for why it exits 0.
+func killOlderInstances() {
+    let pgrep = Process()
+    pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+    pgrep.arguments = ["-x", "showdialog"]
+    let pipe = Pipe()
+    pgrep.standardOutput = pipe
+    guard (try? pgrep.run()) != nil else { return }
+    pgrep.waitUntilExit()
+    let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    for line in out.split(separator: "\n") {
+        if let pid = Int32(line.trimmingCharacters(in: .whitespaces)), pid != getpid() {
+            kill(pid, SIGTERM)
+        }
+    }
+}
+
+// being replaced (SIGTERM from a newer instance) is a normal end, not a failure — exit 0 so
+// translate.py does not mistake it for a dialog error and fire the notification fallback
+signal(SIGTERM, SIG_IGN)
+let sigTermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+sigTermSource.setEventHandler { exit(0) }
+sigTermSource.resume()
+
 final class DialogDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow!
-    var keySince: Date?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        killOlderInstances()
+
         let contentWidth: CGFloat = 480
         let textInset: CGFloat = 12
         let buttonBarHeight: CGFloat = 46
@@ -100,8 +122,11 @@ final class DialogDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.delegate = self
         window.center()
         window.isReleasedWhenClosed = false
+        // stay above normal windows so the user can page the document behind and compare
+        window.level = .floating
 
-        // Esc closes (a titled non-panel window has no built-in Esc binding)
+        // Esc closes (a titled non-panel window has no built-in Esc binding); only reaches
+        // us while the window has focus — Esc pressed in other apps stays theirs
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 {
                 NSApp.terminate(nil)
@@ -110,16 +135,10 @@ final class DialogDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return event
         }
 
-        // clicking anywhere outside the window closes it — the primary "back to work"
-        // gesture, and unlike the focus-loss path it cannot misfire on a focus bounce
-        NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
-            NSApp.terminate(nil)
-        }
-
-        // orphan sweep: an unfocused window with no owner will never receive a close click;
-        // a focused one is being read — leave it alone and check again later
-        Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
-            if self?.window?.isKeyWindow != true {
+        // orphan check: translate.py blocks on this process for the window's whole life, so
+        // a parent death (reparent to launchd, ppid 1) means we were abandoned — close
+        Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+            if getppid() == 1 {
                 NSApp.terminate(nil)
             }
         }
@@ -127,18 +146,6 @@ final class DialogDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
-    }
-
-    func windowDidBecomeKey(_ notification: Notification) {
-        keySince = Date()
-    }
-
-    // close on losing focus — but only after holding it ≥2s, so a focus bounce right
-    // after our self-activation can't slam the window shut before anyone reads it
-    func windowDidResignKey(_ notification: Notification) {
-        if let since = keySince, Date().timeIntervalSince(since) >= 2 {
-            NSApp.terminate(nil)
-        }
     }
 
     func windowWillClose(_ notification: Notification) {

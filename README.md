@@ -15,7 +15,7 @@
 - **Variable name translation** — `snake_case` and `kebab-case` (word-word dashes only) are split into words before translating; standalone `- item` bullet markers are preserved
 - **Bullet list formatting** — bullet list structure is preserved through translation so `- item` lines stay on separate lines
 - **Numbered list formatting** — numbered list items in translated output are automatically placed on new lines
-- **Native result window** — scrollable, text selectable/copyable; closes on Esc, outside click, or focus loss
+- **Native result window** — always-on-top, scrollable, text selectable/copyable; page the document behind it and compare
 - **Smart page splitting** — breaks at paragraphs, sentences, or spaces — never mid-word
 - **Stable** — retries once on transient API failure; falls back to notification if dialog is unavailable
 - **3 words or fewer** → macOS notification; **More than 3 words** → native scrollable window
@@ -96,7 +96,7 @@ terminal_apps = com.apple.Terminal   # comma-separated bundle ids where ⌘C is 
 
 ### Result window
 
-The full translation is shown in one native scrollable window (`showdialog` helper) — text is selectable and copyable. It closes on any of: the Close button / Return, Esc, clicking anywhere outside the window, losing focus after holding it for 2s, or an orphan sweep (an unfocused window is closed within 120s, so an abandoned window can never stay on screen forever — a focused one stays as long as you read).
+The full translation is shown in one native scrollable window (`showdialog` helper) — text is selectable and copyable. The window **floats above all normal windows**, so you can scroll or page the document behind it and compare against the translation. It closes on: the Close button / Return, Esc (when the window has focus), the title-bar red button, or a new translation replacing it (one window at a time — a new hotkey press swaps the content in place of stacking windows). If the parent process dies, the window closes itself within seconds, so an abandoned window can never stay on screen.
 
 ### Development
 
@@ -172,7 +172,7 @@ Each run logs the input, result, and any errors.
 - **變數名稱翻譯** — `snake_case` 和 `kebab-case`（只替換字母之間的 `-`）自動拆字翻譯；bullet `- item` 的 `-` 不受影響
 - **Bullet list 格式保留** — 翻譯後 `- item` 清單結構保持換行，不會被合併成一行
 - **編號清單換行** — 翻譯結果中的編號清單自動換行
-- **原生結果視窗** — 可捲動、文字可選取複製；Esc、點視窗外、或失焦即自動關閉
+- **原生結果視窗** — 永遠置頂、可捲動、文字可選取複製；後面的文件可以邊翻頁邊對照
 - **智慧斷頁** — 優先在段落、句子結尾斷頁，不會切斷句子
 - **穩定性** — API 失敗自動重試一次；對話框無法顯示時 fallback 為通知泡泡
 - **3 個字以內** → macOS 通知泡泡；**超過 3 個字** → 原生可捲動視窗
@@ -252,7 +252,7 @@ terminal_apps = com.apple.Terminal   # 不送 ⌘C 的終端機 bundle id（選�
 
 ### 結果視窗說明
 
-完整翻譯以單一原生可捲動視窗顯示（`showdialog` helper），文字可選取複製。關閉方式：Close 按鈕 / Enter、Esc、點擊視窗外任意處、持有焦點滿 2 秒後失焦，以及孤兒防線（沒有焦點的視窗最多 120 秒內自動收掉，被遺棄的視窗不會永遠留在螢幕上；有焦點的視窗要看多久都行）。
+完整翻譯以單一原生可捲動視窗顯示（`showdialog` helper），文字可選取複製。視窗**永遠浮在最上層**——可以邊捲動、翻頁後面的文件邊對照翻譯。關閉方式：Close 按鈕 / Enter、Esc（視窗有焦點時）、標題列紅鈕，或新的翻譯直接取代它（同時只有一個視窗，再按熱鍵是換內容不是疊視窗）。父程序死亡時視窗數秒內自動收掉，被遺棄的視窗不會永遠留在螢幕上。
 
 ### 開發說明
 

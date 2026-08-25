@@ -108,6 +108,26 @@ bundle、由 `translate.py` 以子程序呼叫。Java 層（`java-trigger/` 主�
 驗證方式：診斷版 helper 把關閉原因寫到 stderr（outside-click / focus-loss / orphan-sweep），
 確認 20 秒無人操作不誤關、切走焦點後以 focus-loss 正常關閉。
 
+## 變更（2026-08-25 同日稍後）：改為永遠置頂，供對照閱讀
+
+使用者需求：翻譯視窗要浮在最上層，讓後面的文件可以邊翻頁邊對照。此需求與「點視窗外即關」
+「失焦即關」直接衝突（對照時必然點擊、捲動背景），經確認採「永遠置頂、手動關」模式
+（快查場景使用者已有其他工具覆蓋）。變更內容：
+
+- 視窗 level 設 `.floating`，浮在所有一般視窗之上。
+- 移除「點視窗外關」與「失焦關」（含 2 秒防彈跳，整段退役）。
+- 關閉路徑剩：Close / Enter、Esc（視窗有焦點時）、標題列紅鈕。
+- **單一視窗**：新翻譯取代舊視窗（啟動時 pgrep 找舊 instance 送 SIGTERM）。SIGTERM 由
+  handler 接住 exit 0——被取代是正常結束，不能讓 translate.py 誤判為 dialog 失敗而
+  觸發通知 fallback。
+- **孤兒防線改為父程序死亡偵測**：原「無焦點 120 秒收掉」在置頂模式下會誤殺對照中的
+  視窗（對照時視窗本來就沒焦點）。translate.py 整個視窗生命週期都 block 在 helper 上，
+  所以父程序死亡（被 reparent 到 launchd，ppid 變 1）即代表被遺棄——每 5 秒檢查一次，
+  中即自動關閉。
+
+驗證：置頂層級（CGWindowList layer=3）、失焦存活、取代舊視窗 exit 0、孤兒 6 秒內收掉、
+端到端 translate.py exit 0，全數通過。
+
 ## 不做的事（YAGNI）
 
 - 不做視窗大小記憶、字級設定、複數視窗管理。
