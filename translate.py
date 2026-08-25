@@ -1,4 +1,4 @@
-import sys, json, os, re, urllib.request, urllib.parse, subprocess, time, traceback, logging
+import sys, json, os, re, urllib.request, urllib.parse, subprocess, time, traceback, logging, unicodedata
 
 # use logging module so the file stays open across calls, avoiding per-call open/close overhead
 logging.basicConfig(
@@ -126,6 +126,10 @@ text = os.environ.get('TRANSLATE_INPUT', '').strip()
 if not text:
     log('INPUT empty, exit')
     sys.exit(0)
+
+# NFKC: fold styled Unicode (LinkedIn bold like 𝗜'𝗱, fullwidth forms) back to plain ASCII —
+# otherwise detect_source_lang sees no a-zA-Z and the offline fallback refuses the text
+text = unicodedata.normalize('NFKC', text)
 
 word_count = len(text.split())
 log(f'INPUT ({word_count}w): {_preview(text)}')
