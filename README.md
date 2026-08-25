@@ -15,10 +15,10 @@
 - **Variable name translation** — `snake_case` and `kebab-case` (word-word dashes only) are split into words before translating; standalone `- item` bullet markers are preserved
 - **Bullet list formatting** — bullet list structure is preserved through translation so `- item` lines stay on separate lines
 - **Numbered list formatting** — numbered list items in translated output are automatically placed on new lines
-- **Paginated results** — long translations split into pages with Previous / Next navigation
+- **Native result window** — scrollable, text selectable/copyable; closes on Esc, outside click, or focus loss
 - **Smart page splitting** — breaks at paragraphs, sentences, or spaces — never mid-word
 - **Stable** — retries once on transient API failure; falls back to notification if dialog is unavailable
-- **3 words or fewer** → macOS notification; **More than 3 words** → dialog with pagination
+- **3 words or fewer** → macOS notification; **More than 3 words** → native scrollable window
 
 ### Installation
 
@@ -94,21 +94,9 @@ terminal_apps = com.apple.Terminal   # comma-separated bundle ids where ⌘C is 
 
 **Logs:** every trigger is recorded to `logs/quicktranslate.log` (frontmost app, whether the clipboard changed, the copied text), rotated daily and auto-pruned after 30 days. Raw stdout/stderr (crashes) go to `logs/quicktranslate.out.log`.
 
-### Pagination
+### Result window
 
-| Page | Buttons |
-|---|---|
-| Single page | Close |
-| First page | Close / **Next** |
-| Middle page | Previous / Close / **Next** |
-| Last page | Previous / **Close** |
-
-### Configuration
-
-Edit `translate.py` to adjust characters per page:
-```python
-CHARS_PER_PAGE = 1000   # increase for larger screens
-```
+The full translation is shown in one native scrollable window (`showdialog` helper) — text is selectable and copyable. It closes on any of: the Close button / Return, Esc, clicking anywhere outside the window, losing focus after holding it for 2s, or an orphan sweep (an unfocused window is closed within 120s, so an abandoned window can never stay on screen forever — a focused one stays as long as you read).
 
 ### Development
 
@@ -145,10 +133,9 @@ normalize_text()      — merges mid-sentence line breaks from API response
 numbered list fix     — inserts newlines before list item numbers (2. 3. …)
 bullet list fix       — restores inline "- item" separators to newlines (fallback)
     ↓
-split_into_pages()    — splits at paragraph → line → sentence → space → hard cut
-    ↓
-show_notification() / show_dialog()   — ≤3 input words → notification, else → dialog
-                                        falls back to notification if dialog unavailable
+show_notification() / show_dialog()   — ≤3 input words → notification, else → native window
+                                        (showdialog helper); falls back to notification if
+                                        the helper is missing or fails
 ```
 
 ### Debugging
@@ -170,7 +157,6 @@ Each run logs the input, result, and any errors.
 ### Known Limitations
 
 - Uses Google Translate's unofficial API — no API key needed, but may have rate limits
-- Button layout is controlled by macOS system dialog — positions and colors cannot be fully customized
 - **Global-hotkey app only translates what ⌘C can copy** — selections that can't be copied (images, copy-blocked fields, scanned PDFs without a text layer) cannot be translated
 
 ---
@@ -186,10 +172,10 @@ Each run logs the input, result, and any errors.
 - **變數名稱翻譯** — `snake_case` 和 `kebab-case`（只替換字母之間的 `-`）自動拆字翻譯；bullet `- item` 的 `-` 不受影響
 - **Bullet list 格式保留** — 翻譯後 `- item` 清單結構保持換行，不會被合併成一行
 - **編號清單換行** — 翻譯結果中的編號清單自動換行
-- **分頁顯示** — 長文翻譯結果自動分頁，支援上一頁 / 下一頁瀏覽
+- **原生結果視窗** — 可捲動、文字可選取複製；Esc、點視窗外、或失焦即自動關閉
 - **智慧斷頁** — 優先在段落、句子結尾斷頁，不會切斷句子
 - **穩定性** — API 失敗自動重試一次；對話框無法顯示時 fallback 為通知泡泡
-- **3 個字以內** → macOS 通知泡泡；**超過 3 個字** → 對話框
+- **3 個字以內** → macOS 通知泡泡；**超過 3 個字** → 原生可捲動視窗
 
 ### 安裝方式
 
@@ -264,21 +250,9 @@ terminal_apps = com.apple.Terminal   # 不送 ⌘C 的終端機 bundle id（選�
 
 **Log：** 每次觸發都記錄到 `logs/quicktranslate.log`（前景 App、剪貼簿有沒有變、複製到的文字），每日輪替、超過 30 天自動清除。原始 stdout/stderr（崩潰）寫到 `logs/quicktranslate.out.log`。
 
-### 分頁按鈕說明
+### 結果視窗說明
 
-| 頁面 | 按鈕 |
-|---|---|
-| 單頁 | Close |
-| 第一頁 | Close / **Next** |
-| 中間頁 | Previous / Close / **Next** |
-| 最後一頁 | Previous / **Close** |
-
-### 設定調整
-
-編輯 `translate.py` 可調整每頁字數：
-```python
-CHARS_PER_PAGE = 1000   # 增加數字 = 每頁顯示更多字
-```
+完整翻譯以單一原生可捲動視窗顯示（`showdialog` helper），文字可選取複製。關閉方式：Close 按鈕 / Enter、Esc、點擊視窗外任意處、持有焦點滿 2 秒後失焦，以及孤兒防線（沒有焦點的視窗最多 120 秒內自動收掉，被遺棄的視窗不會永遠留在螢幕上；有焦點的視窗要看多久都行）。
 
 ### 開發說明
 
@@ -314,10 +288,9 @@ normalize_text()      — 合併 API 回傳結果中的句中換行
 編號清單修正  — 在清單項目編號（2. 3. …）前自動插入換行
 Bullet 修正   — 翻譯結果中仍有 inline "- item" 時補插換行（fallback）
     ↓
-split_into_pages()    — 依段落 → 句子 → 空白 → 強制截斷的順序分頁
-    ↓
-show_notification() / show_dialog()   — 輸入 ≤3 個字 → 通知泡泡，否則 → 對話框
-                                        對話框失敗時 fallback 為通知泡泡
+show_notification() / show_dialog()   — 輸入 ≤3 個字 → 通知泡泡，否則 → 原生視窗
+                                        （showdialog helper）；helper 缺失或失敗時
+                                        fallback 為通知泡泡
 ```
 
 ### 除錯
@@ -339,5 +312,4 @@ tail -f /tmp/translate_debug.log
 ### 已知限制
 
 - 使用 Google Translate 非官方 API — 不需要 API key，但可能有請求頻率限制
-- 對話框按鈕樣式由 macOS 系統控制，位置與顏色無法自訂
 - **全域熱鍵 App 只能翻「⌘C 複製得到的東西」** — 無法複製的選取（圖片、禁止複製的欄位、沒有文字層的掃描 PDF）就無法翻譯

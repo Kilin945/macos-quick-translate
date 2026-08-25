@@ -35,9 +35,10 @@ echo "==> Marking as background agent (LSUIElement, no Dock icon)"
 /usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$PLIST" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$PLIST"
 
-echo "==> Compiling native helpers into the bundle (copykey: synthetic Cmd+C, axselect: selected-text read, translatenative: offline translation)"
+echo "==> Compiling native helpers into the bundle (copykey: synthetic Cmd+C, axselect: selected-text read, translatenative: offline translation, showdialog: result window)"
 swiftc copykey.swift -O -o "$OUT_DIR/$APP_NAME.app/Contents/MacOS/copykey"
 swiftc axselect.swift -O -o "$OUT_DIR/$APP_NAME.app/Contents/MacOS/axselect"
 swiftc translatenative.swift -O -o "$OUT_DIR/$APP_NAME.app/Contents/MacOS/translatenative"
+swiftc showdialog.swift -O -o "$OUT_DIR/$APP_NAME.app/Contents/MacOS/showdialog"
 
 echo "==> Done: $OUT_DIR/$APP_NAME.app"

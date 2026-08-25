@@ -95,6 +95,19 @@ bundle、由 `translate.py` 以子程序呼叫。Java 層（`java-trigger/` 主�
    → **到系統設定重新勾輔助使用權限**（rebuild 簽章改變會讓 axselect 的授權失效——已知代價）
    → 端到端按 cmd+' 驗證。
 
+## 實作後修正（2026-08-25）：失焦關加防彈跳 + 視窗外點擊關閉
+
+實測發現「失焦即關」有焦點彈跳問題：背景 process 自我 activate 取得的焦點，可能在一兩秒內
+被系統（cooperative activation）或使用者在別的 app 的按鍵彈回去，`windowDidResignKey`
+立刻觸發 → 視窗還沒被看到就秒關。修正為：
+
+1. **失焦關加 2 秒門檻**：只有「確實持有焦點滿 2 秒後」的失焦才關閉，剛出現時的焦點彈跳不觸發。
+2. **補上視窗外點擊關閉**（`addGlobalMonitorForEvents` 監聽全域滑鼠按下）：這才是「查完點回去
+   工作」的主要手勢，且完全不受焦點彈跳影響——即使視窗從未成功取得焦點，點外面也能關。
+
+驗證方式：診斷版 helper 把關閉原因寫到 stderr（outside-click / focus-loss / orphan-sweep），
+確認 20 秒無人操作不誤關、切走焦點後以 focus-loss 正常關閉。
+
 ## 不做的事（YAGNI）
 
 - 不做視窗大小記憶、字級設定、複數視窗管理。
