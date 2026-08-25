@@ -83,6 +83,27 @@ def detect_source_lang(text):
         return 'auto'
     return 'en' if (latin / total) &gt; 0.2 else 'auto'
 
+# 429 cooldown: the unofficial gtx endpoint rate-limits by the minute, so retrying in 1s is
+# pointless and every blocked run wastes ~3s before falling back. After a 429, a marker file
+# makes subsequent runs (each hotkey press is a fresh process) go straight to the offline
+# translator; once the cooldown expires the API is tried again, re-arming on another 429.
+COOLDOWN_FILE = '/tmp/translate_429_until'
+COOLDOWN_SECONDS = 600
+
+def google_cooldown_active():
+    try:
+        with open(COOLDOWN_FILE) as f:
+            return time.time() &lt; float(f.read().strip())
+    except Exception:
+        return False
+
+def start_google_cooldown():
+    try:
+        with open(COOLDOWN_FILE, 'w') as f:
+            f.write(str(time.time() + COOLDOWN_SECONDS))
+    except Exception:
+        pass
+
 def translate(text):
     sl = detect_source_lang(text)
     url = f"https://translate.googleapis.com/translate_a/single?client=gtx&amp;sl={sl}&amp;tl=zh-TW&amp;dt=t"
@@ -96,6 +117,16 @@ def translate(text):
             with urllib.request.urlopen(req, timeout=15) as resp:
                 result_data = json.loads(resp.read().decode('utf-8'))
             return ''.join([item[0] for item in result_data[0] if item[0]])
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                # rate-limited: a 1s retry never clears it — arm the cooldown and bail out
+                start_google_cooldown()
+                log(f'translate got HTTP 429, cooling down google for {COOLDOWN_SECONDS // 60}min')
+                raise
+            last_err = e
+            log(f'translate attempt {attempt+1} failed: {e}')
+            if attempt == 0:
+                time.sleep(1)
         except Exception as e:
             last_err = e
             log(f'translate attempt {attempt+1} failed: {e}')
@@ -202,20 +233,30 @@ log(f'INPUT ({word_count}w): {_preview(text)}')
 text = text.replace('_', ' ')
 text = re.sub(r'(?&lt;=\w)-(?=\w)', ' ', text)
 
-try:
-    result = translate(text)
-except Exception as e:
-    log(f'translate ERROR: {traceback.format_exc()}')
+result = None
+if google_cooldown_active():
+    # recently rate-limited — skip the doomed API call and its wasted seconds
+    log('google in 429 cooldown, going straight to offline')
     result = translate_offline(text)
     if result:
-        log(f'offline fallback OK: {_preview(result)}')
-    else:
-        msg = str(e)[:100]
-        # Errno 8 = getaddrinfo failure: no usable network/DNS at all, say so plainly
-        if 'Errno 8' in str(e):
-            msg = "網路未連線（DNS 解析失敗），且離線翻譯不可用。\n\n" + msg
-        show_dialog(f"Translation failed: {msg}")
-        sys.exit(1)
+        log(f'offline (cooldown) OK: {_preview(result)}')
+    # offline unavailable (non-en input, missing helper): fall through and try google anyway
+
+if result is None:
+    try:
+        result = translate(text)
+    except Exception as e:
+        log(f'translate ERROR: {traceback.format_exc()}')
+        result = translate_offline(text)
+        if result:
+            log(f'offline fallback OK: {_preview(result)}')
+        else:
+            msg = str(e)[:100]
+            # Errno 8 = getaddrinfo failure: no usable network/DNS at all, say so plainly
+            if 'Errno 8' in str(e):
+                msg = "網路未連線（DNS 解析失敗），且離線翻譯不可用。\n\n" + msg
+            show_dialog(f"Translation failed: {msg}")
+            sys.exit(1)
 
 if not result:
     log('translate returned empty')
